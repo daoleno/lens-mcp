@@ -127,7 +127,7 @@ For remote HTTP access:
     "lens-protocol-remote": {
       "transport": {
         "type": "http",
-        "url": "http://your-server.com:3000/mcp"
+        "url": "https://lens-mcp.lenscan.io/mcp"
       }
     }
   }
