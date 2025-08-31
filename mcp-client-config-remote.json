@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "lens-protocol-remote": {
+      "transport": {
+        "type": "http",
+        "url": "http://localhost:3000/mcp"
+      }
+    }
+  }
+}

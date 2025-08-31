@@ -1,0 +1,17 @@
+node_modules
+.git
+.github
+*.md
+*.log
+.env
+.env.*
+coverage
+.nyc_output
+dist
+build
+.next
+.vscode
+.idea
+*.swp
+*.swo
+*~

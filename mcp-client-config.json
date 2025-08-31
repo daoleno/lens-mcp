@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "lens-protocol": {
+      "command": "bun",
+      "args": ["index.ts"],
+      "cwd": "/absolute/path/to/lens-mcp",
+      "env": {
+        "LENS_ENVIRONMENT": "mainnet"
+      }
+    }
+  }
+}
