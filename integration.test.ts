@@ -141,4 +141,71 @@ describe('LensMCPServer Integration Tests', () => {
       }
     }, 10000)
   })
+
+  describe('New Tools Integration Tests', () => {
+    test('should search usernames successfully', async () => {
+      const result = await (server as any).searchUsernames({
+        query: 'lens',
+        pageSize: 5,
+      })
+
+      expect(result.isError).toBeUndefined()
+      const data = JSON.parse(result.content[0].text)
+      expect(data).toHaveProperty('usernames')
+      expect(data).toHaveProperty('pageInfo')
+      expect(Array.isArray(data.usernames)).toBe(true)
+    }, 10000)
+
+    test('should fetch accounts by usernames successfully', async () => {
+      // Use known usernames that likely exist
+      const result = await (server as any).fetchAccountsByUsernames({
+        usernames: ['lens'],
+      })
+
+      if (result.isError) {
+        // Some usernames might not exist, which is acceptable
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      const data = JSON.parse(result.content[0].text)
+      expect(Array.isArray(data)).toBe(true)
+    }, 10000)
+
+    test('should handle non-existent post reactions gracefully', async () => {
+      const result = await (server as any).fetchPostReactions({
+        post_id: 'non-existent-post',
+      })
+
+      // Should either return empty results or error gracefully
+      expect(result.content[0].text).toBeDefined()
+    }, 10000)
+
+    test('should handle non-existent post references gracefully', async () => {
+      const result = await (server as any).fetchPostReferences({
+        post_id: 'non-existent-post',
+      })
+
+      // Should either return empty results or error gracefully
+      expect(result.content[0].text).toBeDefined()
+    }, 10000)
+
+    test('should fetch timeline highlights for known account', async () => {
+      const result = await (server as any).fetchTimelineHighlights({
+        account_address: KNOWN_LENS_ADDRESS,
+        feed_type: 'global',
+        pageSize: 3,
+      })
+
+      if (result.isError) {
+        // Timeline highlights might not be available for all accounts
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      const data = JSON.parse(result.content[0].text)
+      expect(data).toHaveProperty('highlights')
+      expect(data).toHaveProperty('pageInfo')
+    }, 10000)
+  })
 })

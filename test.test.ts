@@ -21,6 +21,11 @@ const mockFetchUsername = mock()
 const mockFetchPost = mock()
 const mockFetchApp = mock()
 const mockFetchGroup = mock()
+const mockFetchAccountsBulk = mock()
+const mockFetchPostReactions = mock()
+const mockFetchPostReferences = mock()
+const mockFetchTimelineHighlights = mock()
+const mockFetchUsernames = mock()
 
 // Mock modules
 mock.module('@lens-protocol/client', () => ({
@@ -31,6 +36,15 @@ mock.module('@lens-protocol/client', () => ({
   testnet,
   evmAddress: mockEvmAddress,
   postId: mockPostId,
+  PostReactionType: {
+    Upvote: 'UPVOTE',
+    Downvote: 'DOWNVOTE',
+  },
+  PostReferenceType: {
+    CommentOn: 'COMMENT_ON',
+    QuoteOf: 'QUOTE_OF',
+    RepostOf: 'REPOST_OF',
+  },
 }))
 
 mock.module('@lens-protocol/client/actions', () => ({
@@ -45,6 +59,11 @@ mock.module('@lens-protocol/client/actions', () => ({
   fetchPost: mockFetchPost,
   fetchApp: mockFetchApp,
   fetchGroup: mockFetchGroup,
+  fetchAccountsBulk: mockFetchAccountsBulk,
+  fetchPostReactions: mockFetchPostReactions,
+  fetchPostReferences: mockFetchPostReferences,
+  fetchTimelineHighlights: mockFetchTimelineHighlights,
+  fetchUsernames: mockFetchUsernames,
 }))
 
 // Import after mocking
@@ -69,6 +88,11 @@ describe('LensMCPServer', () => {
     mockFetchPost.mockClear()
     mockFetchApp.mockClear()
     mockFetchGroup.mockClear()
+    mockFetchAccountsBulk.mockClear()
+    mockFetchPostReactions.mockClear()
+    mockFetchPostReferences.mockClear()
+    mockFetchTimelineHighlights.mockClear()
+    mockFetchUsernames.mockClear()
 
     server = new LensMCPServer()
   })
@@ -358,6 +382,146 @@ describe('LensMCPServer', () => {
       expect(mockFetchPostsToExplore).toHaveBeenCalledWith(mockLensClient, {
         pageSize: PageSize.Ten,
       })
+    })
+  })
+
+  describe('New Tool Handlers - Direct Method Testing', () => {
+    const mockSuccessResult = {
+      isErr: () => false,
+      value: { items: [{ mockData: 'test' }], pageInfo: {} },
+    }
+
+    const mockErrorResult = {
+      isErr: () => true,
+      error: { message: 'Test error' },
+    }
+
+    test('fetchAccountsByUsernames should return success result', async () => {
+      const mockResult = {
+        isErr: () => false,
+        value: [{ address: '0x123', username: { value: 'lens/test' } }],
+      }
+      mockFetchAccountsBulk.mockResolvedValue(mockResult)
+      mockEvmAddress.mockReturnValue('0x123')
+
+      const result = await (server as any).fetchAccountsByUsernames({
+        usernames: ['test', 'example'],
+      })
+
+      expect(result.content[0].text).toContain('0x123')
+      expect(result.isError).toBeUndefined()
+      expect(mockFetchAccountsBulk).toHaveBeenCalledWith(mockLensClient, {
+        usernames: [{ localName: 'test' }, { localName: 'example' }],
+      })
+    })
+
+    test('fetchAccountsByUsernames should require usernames parameter', async () => {
+      const result = await (server as any).fetchAccountsByUsernames({})
+
+      expect(result.content[0].text).toContain('Usernames array is required')
+      expect(result.isError).toBe(true)
+    })
+
+    test('fetchAccountsByUsernames should handle empty usernames array', async () => {
+      const result = await (server as any).fetchAccountsByUsernames({ usernames: [] })
+
+      expect(result.content[0].text).toContain('must not be empty')
+      expect(result.isError).toBe(true)
+    })
+
+    test('fetchPostReactions should work correctly', async () => {
+      mockFetchPostReactions.mockResolvedValue(mockSuccessResult)
+      mockPostId.mockReturnValue('post-123')
+
+      const result = await (server as any).fetchPostReactions({
+        post_id: 'post-123',
+        reaction_types: ['UPVOTE'],
+        pageSize: 5,
+      })
+
+      expect(mockFetchPostReactions).toHaveBeenCalledWith(mockLensClient, {
+        post: 'post-123',
+        pageSize: PageSize.Ten,
+        filter: { anyOf: ['UPVOTE'] },
+      })
+      expect(result.isError).toBeUndefined()
+    })
+
+    test('fetchPostReactions should require post_id parameter', async () => {
+      const result = await (server as any).fetchPostReactions({})
+
+      expect(result.content[0].text).toContain('Post ID is required')
+      expect(result.isError).toBe(true)
+    })
+
+    test('fetchPostReferences should work correctly', async () => {
+      mockFetchPostReferences.mockResolvedValue(mockSuccessResult)
+      mockPostId.mockReturnValue('post-123')
+
+      const result = await (server as any).fetchPostReferences({
+        post_id: 'post-123',
+        reference_types: ['COMMENT_ON', 'QUOTE_OF'],
+      })
+
+      expect(mockFetchPostReferences).toHaveBeenCalledWith(mockLensClient, {
+        referencedPost: 'post-123',
+        referenceTypes: ['COMMENT_ON', 'QUOTE_OF'],
+        pageSize: PageSize.Ten,
+      })
+      expect(result.isError).toBeUndefined()
+    })
+
+    test('fetchPostReferences should require post_id parameter', async () => {
+      const result = await (server as any).fetchPostReferences({})
+
+      expect(result.content[0].text).toContain('Post ID is required')
+      expect(result.isError).toBe(true)
+    })
+
+    test('fetchTimelineHighlights should work correctly', async () => {
+      mockFetchTimelineHighlights.mockResolvedValue(mockSuccessResult)
+      mockEvmAddress.mockReturnValue('0x123')
+
+      const result = await (server as any).fetchTimelineHighlights({
+        account_address: '0x123',
+        feed_type: 'global',
+      })
+
+      expect(mockFetchTimelineHighlights).toHaveBeenCalledWith(mockLensClient, {
+        account: '0x123',
+        pageSize: PageSize.Ten,
+        filter: { feeds: [{ globalFeed: true }] },
+      })
+      expect(result.isError).toBeUndefined()
+    })
+
+    test('fetchTimelineHighlights should require account_address parameter', async () => {
+      const result = await (server as any).fetchTimelineHighlights({})
+
+      expect(result.content[0].text).toContain('Account address is required')
+      expect(result.isError).toBe(true)
+    })
+
+    test('searchUsernames should work correctly', async () => {
+      mockFetchUsernames.mockResolvedValue(mockSuccessResult)
+
+      const result = await (server as any).searchUsernames({
+        query: 'bob',
+        pageSize: 15,
+      })
+
+      expect(mockFetchUsernames).toHaveBeenCalledWith(mockLensClient, {
+        filter: { localNameQuery: 'bob' },
+        pageSize: PageSize.Fifty,
+      })
+      expect(result.isError).toBeUndefined()
+    })
+
+    test('searchUsernames should require query parameter', async () => {
+      const result = await (server as any).searchUsernames({})
+
+      expect(result.content[0].text).toContain('Search query is required')
+      expect(result.isError).toBe(true)
     })
   })
 })

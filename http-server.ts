@@ -68,6 +68,11 @@ Available Tools:
 - fetch_apps: Get Lens Protocol applications
 - fetch_groups: Fetch groups from Lens Protocol
 - fetch_usernames: Fetch usernames by local name
+- search_usernames: Search for usernames by query string
+- fetch_accounts_by_usernames: Bulk fetch accounts by username list
+- fetch_post_reactions: Get reactions (likes, upvotes, downvotes) for a post
+- fetch_post_references: Get references (shares, comments, quotes) to a post
+- fetch_timeline_highlights: Get timeline highlights for an account
 
 Health Check: /health
 `
