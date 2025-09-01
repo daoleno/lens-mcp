@@ -26,6 +26,7 @@ const mockFetchPostReactions = mock()
 const mockFetchPostReferences = mock()
 const mockFetchTimelineHighlights = mock()
 const mockFetchUsernames = mock()
+const mockFetchAccounts = mock()
 
 // Mock modules
 mock.module('@lens-protocol/client', () => ({
@@ -64,6 +65,7 @@ mock.module('@lens-protocol/client/actions', () => ({
   fetchPostReferences: mockFetchPostReferences,
   fetchTimelineHighlights: mockFetchTimelineHighlights,
   fetchUsernames: mockFetchUsernames,
+  fetchAccounts: mockFetchAccounts,
 }))
 
 // Import after mocking
@@ -207,17 +209,6 @@ describe('LensMCPServer', () => {
       expect(result.isError).toBe(true)
     })
 
-    test('searchAccounts should return unsupported message', async () => {
-      const result = await (server as any).searchAccounts({ query: 'test' })
-
-      expect(result.content[0].text).toContain('not supported in public client')
-    })
-
-    test('searchPosts should return unsupported message', async () => {
-      const result = await (server as any).searchPosts({ query: 'test' })
-
-      expect(result.content[0].text).toContain('returning explore posts instead')
-    })
 
     test('fetchApps should work correctly', async () => {
       mockFetchApps.mockResolvedValue({
@@ -368,6 +359,7 @@ describe('LensMCPServer', () => {
 
       const searchPostsResult = await (server as any).searchPosts({})
       expect(searchPostsResult.isError).toBe(true)
+
     })
 
     test('should handle optional parameters with defaults', async () => {
@@ -519,6 +511,56 @@ describe('LensMCPServer', () => {
 
     test('searchUsernames should require query parameter', async () => {
       const result = await (server as any).searchUsernames({})
+
+      expect(result.content[0].text).toContain('Search query is required')
+      expect(result.isError).toBe(true)
+    })
+
+    test('searchAccounts should work correctly', async () => {
+      mockFetchAccounts.mockResolvedValue(mockSuccessResult)
+
+      const result = await (server as any).searchAccounts({
+        query: 'bob',
+        pageSize: 5,
+      })
+
+      expect(mockFetchAccounts).toHaveBeenCalledWith(mockLensClient, {
+        filter: {
+          searchBy: {
+            localNameQuery: 'bob',
+          },
+        },
+        pageSize: PageSize.Ten,
+      })
+      expect(result.isError).toBeUndefined()
+    })
+
+    test('searchAccounts should require query parameter', async () => {
+      const result = await (server as any).searchAccounts({})
+
+      expect(result.content[0].text).toContain('Search query is required')
+      expect(result.isError).toBe(true)
+    })
+
+    test('searchPosts should work correctly', async () => {
+      mockFetchPosts.mockResolvedValue(mockSuccessResult)
+
+      const result = await (server as any).searchPosts({
+        query: 'hello world',
+        pageSize: 5,
+      })
+
+      expect(mockFetchPosts).toHaveBeenCalledWith(mockLensClient, {
+        filter: {
+          searchQuery: 'hello world',
+        },
+        pageSize: PageSize.Ten,
+      })
+      expect(result.isError).toBeUndefined()
+    })
+
+    test('searchPosts should require query parameter', async () => {
+      const result = await (server as any).searchPosts({})
 
       expect(result.content[0].text).toContain('Search query is required')
       expect(result.isError).toBe(true)

@@ -9,11 +9,11 @@ A Model Context Protocol (MCP) server that provides access to Lens Protocol data
 - **fetch_posts** - Fetch posts with optional filters (by author, pagination)
 - **fetch_followers** - Get followers of a specific account
 - **fetch_following** - Get accounts that a specific account follows
-- **search_accounts** - Search for profiles (limited in public mode)
-- **search_posts** - Search for posts (limited in public mode)
 - **fetch_apps** - Fetch Lens Protocol applications
 - **fetch_groups** - Fetch groups from the protocol
 - **fetch_usernames** - Fetch username information
+- **search_accounts** - Search for profiles by username query
+- **search_posts** - Search for posts by content query
 - **search_usernames** - Search for usernames by query string
 - **fetch_accounts_by_usernames** - Bulk fetch accounts by username list
 - **fetch_post_reactions** - Get reactions (likes, upvotes, downvotes) for a post

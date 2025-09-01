@@ -63,11 +63,11 @@ Available Tools:
 - fetch_posts: Fetch posts with optional filters
 - fetch_followers: Get followers of an account
 - fetch_following: Get accounts that an account follows
-- search_accounts: Search for accounts/profiles
-- search_posts: Search for posts/publications
 - fetch_apps: Get Lens Protocol applications
 - fetch_groups: Fetch groups from Lens Protocol
 - fetch_usernames: Fetch usernames by local name
+- search_accounts: Search for profiles by username query
+- search_posts: Search for posts by content query  
 - search_usernames: Search for usernames by query string
 - fetch_accounts_by_usernames: Bulk fetch accounts by username list
 - fetch_post_reactions: Get reactions (likes, upvotes, downvotes) for a post

@@ -12,6 +12,7 @@ import {
 } from '@lens-protocol/client'
 import {
   fetchAccount,
+  fetchAccounts,
   fetchAccountsBulk,
   fetchApp,
   fetchApps,
@@ -375,10 +376,6 @@ export class LensMCPServer {
             return await this.fetchFollowers(args)
           case 'fetch_following':
             return await this.fetchFollowing(args)
-          case 'search_accounts':
-            return await this.searchAccounts(args)
-          case 'search_posts':
-            return await this.searchPosts(args)
           case 'fetch_apps':
             return await this.fetchApps(args)
           case 'fetch_groups':
@@ -395,6 +392,10 @@ export class LensMCPServer {
             return await this.fetchTimelineHighlights(args)
           case 'search_usernames':
             return await this.searchUsernames(args)
+          case 'search_accounts':
+            return await this.searchAccounts(args)
+          case 'search_posts':
+            return await this.searchPosts(args)
           default:
             throw new Error(`Unknown tool: ${name}`)
         }
@@ -669,14 +670,30 @@ export class LensMCPServer {
         throw new Error('Search query is required')
       }
 
-      // For now, we'll use fetchPosts to search (since search functionality needs session client)
-      // This is a simplified implementation
+      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
+
+      const result = await fetchAccounts(this.lensClient, {
+        filter: {
+          searchBy: {
+            localNameQuery: query,
+          },
+        },
+        pageSize: lensPageSize,
+      })
+
+      if (result.isErr()) {
+        throw new Error(`Failed to search accounts: ${result.error}`)
+      }
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(
-              { message: 'Account search requires authenticated session - not supported in public client' },
+              {
+                accounts: result.value.items,
+                pageInfo: result.value.pageInfo,
+              },
               null,
               2
             ),
@@ -704,13 +721,28 @@ export class LensMCPServer {
         throw new Error('Search query is required')
       }
 
-      // For now, we'll return explore posts as search is complex without session
+      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
+
+      const result = await fetchPosts(this.lensClient, {
+        filter: {
+          searchQuery: query,
+        },
+        pageSize: lensPageSize,
+      })
+
+      if (result.isErr()) {
+        throw new Error(`Failed to search posts: ${result.error}`)
+      }
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(
-              { message: 'Post search requires authenticated session - returning explore posts instead' },
+              {
+                posts: result.value.items,
+                pageInfo: result.value.pageInfo,
+              },
               null,
               2
             ),
@@ -1298,30 +1330,6 @@ export class LensMCPServer {
                 },
               },
               {
-                name: 'search_accounts',
-                description: 'Search for Lens Protocol accounts/profiles',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    query: { type: 'string', description: 'Search query for accounts' },
-                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
-                  },
-                  required: ['query'],
-                },
-              },
-              {
-                name: 'search_posts',
-                description: 'Search for posts/publications on Lens Protocol',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    query: { type: 'string', description: 'Search query for posts' },
-                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
-                  },
-                  required: ['query'],
-                },
-              },
-              {
                 name: 'fetch_apps',
                 description: 'Fetch Lens Protocol applications',
                 inputSchema: {
@@ -1420,6 +1428,30 @@ export class LensMCPServer {
                   required: ['query'],
                 },
               },
+              {
+                name: 'search_accounts',
+                description: 'Search for Lens Protocol accounts/profiles by username',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    query: { type: 'string', description: 'Search query for account usernames' },
+                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
+                  },
+                  required: ['query'],
+                },
+              },
+              {
+                name: 'search_posts',
+                description: 'Search for posts/publications by content',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    query: { type: 'string', description: 'Search query for post content' },
+                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
+                  },
+                  required: ['query'],
+                },
+              },
             ],
           },
         }
@@ -1442,12 +1474,6 @@ export class LensMCPServer {
             break
           case 'fetch_following':
             result = await this.fetchFollowing(args)
-            break
-          case 'search_accounts':
-            result = await this.searchAccounts(args)
-            break
-          case 'search_posts':
-            result = await this.searchPosts(args)
             break
           case 'fetch_apps':
             result = await this.fetchApps(args)
@@ -1472,6 +1498,12 @@ export class LensMCPServer {
             break
           case 'search_usernames':
             result = await this.searchUsernames(args)
+            break
+          case 'search_accounts':
+            result = await this.searchAccounts(args)
+            break
+          case 'search_posts':
+            result = await this.searchPosts(args)
             break
           default:
             throw new Error(`Unknown tool: ${toolName}`)
