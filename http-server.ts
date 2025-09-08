@@ -49,15 +49,6 @@ For most MCP clients:
 For Claude Code:
 claude mcp add -s user -t http lens-protocol https://lens-mcp.lenscan.io/mcp
 
-For Server-Sent Events (SSE):
-{
-  "mcpServers": {
-    "lens-protocol": {
-      "serverUrl": "https://lens-mcp.lenscan.io/sse"
-    }
-  }
-}
-
 Available Tools:
 - fetch_account: Get Lens Protocol account/profile by address
 - fetch_posts: Fetch posts with optional filters
@@ -127,14 +118,6 @@ Health Check: /health
           500
         )
       }
-    })
-
-    this.app.get('/mcp', (c) => {
-      return c.text('event: message\ndata: {"type": "connection", "status": "connected"}\n\n', 200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      })
     })
 
     this.app.get('/health', (c) => {
