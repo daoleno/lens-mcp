@@ -66,8 +66,8 @@ Available Tools:
 - fetch_apps: Get Lens Protocol applications
 - fetch_groups: Fetch groups from Lens Protocol
 - fetch_usernames: Fetch usernames by local name
-- search_accounts: Search for profiles by username query
-- search_posts: Search for posts by content query  
+- search_accounts: Search for Lens Protocol accounts/profiles by username
+- search_posts: Search for posts/publications by content  
 - search_usernames: Search for usernames by query string
 - fetch_accounts_by_usernames: Bulk fetch accounts by username list
 - fetch_post_reactions: Get reactions (likes, upvotes, downvotes) for a post
@@ -85,28 +85,13 @@ Health Check: /health
     this.app.post('/mcp', async (c) => {
       const startTime = Date.now()
       const requestId = crypto.randomUUID().substring(0, 8)
-      const clientIP = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'
-      const userAgent = c.req.header('user-agent') || 'unknown'
 
       try {
         const body = await c.req.json()
 
-        console.log(`🌐 [${requestId}] HTTP MCP REQUEST:`, {
-          method: body.method,
-          id: body.id,
-          ip: clientIP,
-          userAgent: userAgent.substring(0, 100), // 截断过长的UA
-          timestamp: new Date().toISOString(),
-          hasParams: !!body.params,
-        })
-
-        // Log tool calls specifically
+        // Log tool calls
         if (body.method === 'tools/call' && body.params) {
-          console.log(`🔧 [${requestId}] TOOL CALL:`, {
-            tool: body.params.name,
-            arguments: body.params.arguments,
-            requestSize: JSON.stringify(body.params.arguments).length,
-          })
+          console.log(`🔧 [${requestId}] ${body.params.name}: ${JSON.stringify(body.params.arguments)}`)
         }
 
         const response = await this.mcpServer.handleHttpRequest(body)
@@ -117,30 +102,18 @@ Health Check: /health
           const sessionId = this.generateSessionId()
           c.header('Mcp-Session-Id', sessionId)
           this.sessionStore.set(sessionId, { initialized: true })
-
-          console.log(`🎯 [${requestId}] INITIALIZE SUCCESS (${duration}ms):`, {
-            sessionId,
-            serverName: response.result?.serverInfo?.name || 'unknown',
-          })
         } else if (body.method === 'tools/call') {
           const isError = response.error || response.result?.content?.[0]?.isError
-          console.log(`${isError ? '❌' : '✅'} [${requestId}] TOOL RESULT (${duration}ms):`, {
-            tool: body.params?.name,
-            success: !isError,
-            hasContent: !!response.result?.content?.[0]?.text,
-            contentLength: response.result?.content?.[0]?.text?.length || 0,
-          })
+          if (isError) {
+            console.error(`❌ [${requestId}] ${body.params?.name} failed`)
+          }
         }
 
         return c.json(response)
       } catch (error) {
         const duration = Date.now() - startTime
-        console.error(`💥 [${requestId}] HTTP MCP ERROR (${duration}ms):`, {
-          error: error instanceof Error ? error.message : String(error),
-          method: 'unknown',
-          ip: clientIP,
-          stack: error instanceof Error ? error.stack : undefined,
-        })
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error(`💥 [${requestId}] HTTP ERROR (${duration}ms): ${errorMessage}`)
 
         return c.json(
           {
@@ -148,7 +121,7 @@ Health Check: /health
             error: {
               code: -32603,
               message: 'Internal error',
-              data: error instanceof Error ? error.message : 'Unknown error',
+              data: errorMessage,
             },
           },
           500

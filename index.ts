@@ -663,31 +663,14 @@ export class LensMCPServer {
   }
 
   private async searchAccounts(args: any): Promise<CallToolResult> {
-    const startTime = Date.now()
-    const requestId = crypto.randomUUID().substring(0, 8)
-
-    console.log(`🔍 [${requestId}] SEARCH_ACCOUNTS REQUEST:`, {
-      query: args.query,
-      pageSize: args.pageSize || 10,
-      timestamp: new Date().toISOString(),
-      userAgent: 'lens-mcp-server',
-    })
-
     try {
       const { query, pageSize = 10 } = args
 
       if (!query) {
-        console.error(`❌ [${requestId}] SEARCH_ACCOUNTS ERROR: Search query is required`)
         throw new Error('Search query is required')
       }
 
       const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      console.log(`📡 [${requestId}] Calling Lens Protocol API:`, {
-        endpoint: 'fetchAccounts',
-        filter: { searchBy: { localNameQuery: query } },
-        pageSize: lensPageSize,
-      })
 
       const result = await fetchAccounts(this.lensClient, {
         filter: {
@@ -698,38 +681,8 @@ export class LensMCPServer {
         pageSize: lensPageSize,
       })
 
-      const duration = Date.now() - startTime
-
       if (result.isErr()) {
-        console.error(`❌ [${requestId}] LENS API ERROR (${duration}ms):`, {
-          error: result.error,
-          errorMessage: result.error?.message || 'Unknown error',
-          query,
-          pageSize,
-        })
         throw new Error(`Failed to search accounts: ${result.error}`)
-      }
-
-      const accounts = result.value.items
-      const pageInfo = result.value.pageInfo
-
-      console.log(`✅ [${requestId}] SEARCH_ACCOUNTS SUCCESS (${duration}ms):`, {
-        query,
-        pageSize: args.pageSize || 10,
-        resultsCount: accounts.length,
-        hasNextPage: !!pageInfo.next,
-        hasPrevPage: !!pageInfo.prev,
-        lensPageSize,
-        totalDuration: duration,
-      })
-
-      // Log first result for debugging
-      if (accounts.length > 0) {
-        console.log(`👤 [${requestId}] FIRST RESULT:`, {
-          username: accounts[0].username?.value || 'No username',
-          address: accounts[0].address,
-          score: accounts[0].score,
-        })
       }
 
       return {
@@ -748,21 +701,11 @@ export class LensMCPServer {
         ],
       }
     } catch (error) {
-      const duration = Date.now() - startTime
-      const errorMessage = error instanceof Error ? error.message : String(error)
-
-      console.error(`💥 [${requestId}] SEARCH_ACCOUNTS EXCEPTION (${duration}ms):`, {
-        error: errorMessage,
-        query: args.query,
-        pageSize: args.pageSize || 10,
-        stack: error instanceof Error ? error.stack : undefined,
-      })
-
       return {
         content: [
           {
             type: 'text',
-            text: `Error searching accounts: ${errorMessage}`,
+            text: `Error searching accounts: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
         isError: true,
@@ -771,31 +714,14 @@ export class LensMCPServer {
   }
 
   private async searchPosts(args: any): Promise<CallToolResult> {
-    const startTime = Date.now()
-    const requestId = crypto.randomUUID().substring(0, 8)
-
-    console.log(`🔍 [${requestId}] SEARCH_POSTS REQUEST:`, {
-      query: args.query,
-      pageSize: args.pageSize || 10,
-      timestamp: new Date().toISOString(),
-      userAgent: 'lens-mcp-server',
-    })
-
     try {
       const { query, pageSize = 10 } = args
 
       if (!query) {
-        console.error(`❌ [${requestId}] SEARCH_POSTS ERROR: Search query is required`)
         throw new Error('Search query is required')
       }
 
       const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      console.log(`📡 [${requestId}] Calling Lens Protocol API:`, {
-        endpoint: 'fetchPosts',
-        filter: { searchQuery: query },
-        pageSize: lensPageSize,
-      })
 
       const result = await fetchPosts(this.lensClient, {
         filter: {
@@ -804,39 +730,8 @@ export class LensMCPServer {
         pageSize: lensPageSize,
       })
 
-      const duration = Date.now() - startTime
-
       if (result.isErr()) {
-        console.error(`❌ [${requestId}] LENS API ERROR (${duration}ms):`, {
-          error: result.error,
-          errorMessage: result.error?.message || 'Unknown error',
-          query,
-          pageSize,
-        })
         throw new Error(`Failed to search posts: ${result.error}`)
-      }
-
-      const posts = result.value.items
-      const pageInfo = result.value.pageInfo
-
-      console.log(`✅ [${requestId}] SEARCH_POSTS SUCCESS (${duration}ms):`, {
-        query,
-        pageSize: args.pageSize || 10,
-        resultsCount: posts.length,
-        hasNextPage: !!pageInfo.next,
-        hasPrevPage: !!pageInfo.prev,
-        lensPageSize,
-        totalDuration: duration,
-      })
-
-      // Log first result for debugging
-      if (posts.length > 0) {
-        console.log(`📄 [${requestId}] FIRST RESULT:`, {
-          postId: posts[0].id,
-          author: posts[0].author?.username?.value || 'Unknown',
-          content: posts[0].metadata?.content?.substring(0, 100) + '...' || 'No content',
-          createdAt: posts[0].timestamp,
-        })
       }
 
       return {
@@ -855,21 +750,11 @@ export class LensMCPServer {
         ],
       }
     } catch (error) {
-      const duration = Date.now() - startTime
-      const errorMessage = error instanceof Error ? error.message : String(error)
-
-      console.error(`💥 [${requestId}] SEARCH_POSTS EXCEPTION (${duration}ms):`, {
-        error: errorMessage,
-        query: args.query,
-        pageSize: args.pageSize || 10,
-        stack: error instanceof Error ? error.stack : undefined,
-      })
-
       return {
         content: [
           {
             type: 'text',
-            text: `Error searching posts: ${errorMessage}`,
+            text: `Error searching posts: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
         isError: true,
