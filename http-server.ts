@@ -83,19 +83,65 @@ Health Check: /health
     })
 
     this.app.post('/mcp', async (c) => {
+      const startTime = Date.now()
+      const requestId = crypto.randomUUID().substring(0, 8)
+      const clientIP = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'
+      const userAgent = c.req.header('user-agent') || 'unknown'
+
       try {
         const body = await c.req.json()
+
+        console.log(`🌐 [${requestId}] HTTP MCP REQUEST:`, {
+          method: body.method,
+          id: body.id,
+          ip: clientIP,
+          userAgent: userAgent.substring(0, 100), // 截断过长的UA
+          timestamp: new Date().toISOString(),
+          hasParams: !!body.params,
+        })
+
+        // Log tool calls specifically
+        if (body.method === 'tools/call' && body.params) {
+          console.log(`🔧 [${requestId}] TOOL CALL:`, {
+            tool: body.params.name,
+            arguments: body.params.arguments,
+            requestSize: JSON.stringify(body.params.arguments).length,
+          })
+        }
+
         const response = await this.mcpServer.handleHttpRequest(body)
+
+        const duration = Date.now() - startTime
 
         if (body.method === 'initialize') {
           const sessionId = this.generateSessionId()
           c.header('Mcp-Session-Id', sessionId)
           this.sessionStore.set(sessionId, { initialized: true })
+
+          console.log(`🎯 [${requestId}] INITIALIZE SUCCESS (${duration}ms):`, {
+            sessionId,
+            serverName: response.result?.serverInfo?.name || 'unknown',
+          })
+        } else if (body.method === 'tools/call') {
+          const isError = response.error || response.result?.content?.[0]?.isError
+          console.log(`${isError ? '❌' : '✅'} [${requestId}] TOOL RESULT (${duration}ms):`, {
+            tool: body.params?.name,
+            success: !isError,
+            hasContent: !!response.result?.content?.[0]?.text,
+            contentLength: response.result?.content?.[0]?.text?.length || 0,
+          })
         }
 
         return c.json(response)
       } catch (error) {
-        console.error('HTTP MCP Error:', error)
+        const duration = Date.now() - startTime
+        console.error(`💥 [${requestId}] HTTP MCP ERROR (${duration}ms):`, {
+          error: error instanceof Error ? error.message : String(error),
+          method: 'unknown',
+          ip: clientIP,
+          stack: error instanceof Error ? error.stack : undefined,
+        })
+
         return c.json(
           {
             jsonrpc: '2.0',
@@ -122,7 +168,6 @@ Health Check: /health
       return c.json({ status: 'ok', service: 'lens-mcp-server' })
     })
   }
-
 
   private generateSessionId(): string {
     return crypto.randomUUID()
