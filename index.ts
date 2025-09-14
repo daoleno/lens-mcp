@@ -1230,36 +1230,6 @@ export class LensMCPServer {
         }
       }
 
-      if (request.method === 'tools/list') {
-        return {
-          jsonrpc: '2.0',
-          id: request.id,
-          result: {
-            tools: [
-              {
-                name: 'lens_search',
-                description: 'When you need to find or discover anything on Lens Protocol',
-                inputSchema: { type: 'object', properties: {} },
-              },
-              {
-                name: 'lens_profile',
-                description: 'When you want to learn everything about a Lens Protocol account',
-                inputSchema: { type: 'object', properties: {} },
-              },
-              {
-                name: 'lens_content',
-                description: 'When you want to understand how content performs',
-                inputSchema: { type: 'object', properties: {} },
-              },
-              {
-                name: 'lens_ecosystem',
-                description: 'When you want to explore the broader Lens Protocol ecosystem',
-                inputSchema: { type: 'object', properties: {} },
-              },
-            ],
-          },
-        }
-      }
 
       if (request.method === 'tools/call') {
         const toolName = request.params.name
