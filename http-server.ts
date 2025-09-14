@@ -50,20 +50,10 @@ For Claude Code:
 claude mcp add -s user -t http lens-protocol https://lens-mcp.lenscan.io/mcp
 
 Available Tools:
-- fetch_account: Get Lens Protocol account/profile by address
-- fetch_posts: Fetch posts with optional filters
-- fetch_followers: Get followers of an account
-- fetch_following: Get accounts that an account follows
-- fetch_apps: Get Lens Protocol applications
-- fetch_groups: Fetch groups from Lens Protocol
-- fetch_usernames: Fetch usernames by local name
-- search_accounts: Search for Lens Protocol accounts/profiles by username
-- search_posts: Search for posts/publications by content  
-- search_usernames: Search for usernames by query string
-- fetch_accounts_by_usernames: Bulk fetch accounts by username list
-- fetch_post_reactions: Get reactions (likes, upvotes, downvotes) for a post
-- fetch_post_references: Get references (shares, comments, quotes) to a post
-- fetch_timeline_highlights: Get timeline highlights for an account
+- lens_search: Find and discover anything on Lens Protocol (accounts, posts, usernames, apps, groups)
+- lens_profile: Comprehensive account analysis (identity, social connections, influence, activity with posts)
+- lens_content: Content performance analysis (posts, reactions, comments, engagement)
+- lens_ecosystem: Explore the broader ecosystem (trending content, apps, statistics)
 
 Health Check: /health
 `

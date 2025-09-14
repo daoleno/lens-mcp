@@ -1,30 +1,126 @@
 # Lens Protocol MCP Server
 
-A Model Context Protocol (MCP) server that provides access to Lens Protocol data and functionality. This server enables AI tools to interact with the Lens Protocol ecosystem through standardized MCP interfaces.
+A Model Context Protocol (MCP) server that provides agent-optimized access to Lens Protocol data and functionality.
 
-## Features
+## 🛠️ Available Tools
 
-### Tools (Actions)
-- **fetch_account** - Fetch Lens Protocol account/profile by address
-- **fetch_posts** - Fetch posts with optional filters (by author, pagination)
-- **fetch_followers** - Get followers of a specific account
-- **fetch_following** - Get accounts that a specific account follows
-- **fetch_apps** - Fetch Lens Protocol applications
-- **fetch_groups** - Fetch groups from the protocol
-- **fetch_usernames** - Fetch username information
-- **search_accounts** - Search for profiles by username query
-- **search_posts** - Search for posts by content query
-- **search_usernames** - Search for usernames by query string
-- **fetch_accounts_by_usernames** - Bulk fetch accounts by username list
-- **fetch_post_reactions** - Get reactions (likes, upvotes, downvotes) for a post
-- **fetch_post_references** - Get references (shares, comments, quotes) to a post
-- **fetch_timeline_highlights** - Get timeline highlights for an account
+### **lens_search**
+When you need to find or discover anything on Lens Protocol
+- **Find**: Accounts, posts, usernames, apps, and groups
+- **Natural Language**: "crypto accounts", "DeFi posts", "popular apps"
+- **Example**: `lens_search(query="vitalik", type="accounts", show="concise")`
+
+### **lens_profile** 
+When you want to learn everything about a Lens Protocol account
+- **Comprehensive Analysis**: Identity, social connections, influence, and activity with posts
+- **Include Options**: `basic`, `social`, `influence`, `activity` (includes posts), `network`
+- **Example**: `lens_profile(who="0x...", include=["basic", "activity"], analyze="influence")`
+
+### **lens_content**
+When you want to understand how content performs and what people think about it
+- **Content Analysis**: Posts, reactions, comments, engagement metrics
+- **Natural Queries**: "reactions to this post", "popular posts by user"
+- **Example**: `lens_content(about="reactions", target="post_123", include=["likes", "comments"])`
+
+### **lens_ecosystem**
+When you want to explore the broader Lens Protocol ecosystem
+- **Ecosystem Views**: Trending content, popular applications, platform statistics
+- **Community Insights**: Apps, groups, ecosystem health, growth areas
+- **Example**: `lens_ecosystem(view="trending", timeframe="7d", show="detailed")`
+
 
 ### Resources (Data Access)
 - **lens://account/{address}** - Account/profile information
 - **lens://post/{id}** - Post/publication data
 - **lens://app/{address}** - Application information
 - **lens://group/{address}** - Group information
+
+## 📋 Response Formats
+
+### Concise (Default)
+Natural language summaries optimized for AI understanding:
+```
+🔍 Found 5 accounts matching "blockchain":
+• vitalik.lens (0x1234...)
+• ethereum.lens (0x5678...)
+• defi.lens (0x9abc...)
+... and 2 more
+```
+
+### Detailed
+Summary + complete JSON data for full context:
+```
+🔍 Found 5 accounts matching "blockchain":
+• vitalik.lens (0x1234...)
+...
+
+{
+  "items": [...],
+  "pageInfo": {...}
+}
+```
+
+### Raw
+Direct JSON output for programmatic use:
+```json
+{
+  "items": [...],
+  "pageInfo": {...}
+}
+```
+
+## 🎯 Usage Examples
+
+#### Search for Accounts
+```json
+{
+  "name": "lens_search",
+  "arguments": {
+    "query": "vitalik",
+    "type": "accounts",
+    "show": "concise",
+    "limit": 10
+  }
+}
+```
+
+#### Analyze Profile with Activity and Social Data
+```json
+{
+  "name": "lens_profile",
+  "arguments": {
+    "who": "0x...",
+    "include": ["basic", "activity", "social"],
+    "show": "detailed"
+  }
+}
+```
+
+#### Understand Content Engagement
+```json
+{
+  "name": "lens_content",
+  "arguments": {
+    "what": "reactions to this post",
+    "about": "reactions", 
+    "target": "post_123",
+    "include": ["likes", "comments"]
+  }
+}
+```
+
+#### Explore Ecosystem Trends
+```json
+{
+  "name": "lens_ecosystem",
+  "arguments": {
+    "view": "trending",
+    "timeframe": "7d",
+    "show": "detailed"
+  }
+}
+```
+
 
 ## Installation
 
@@ -56,55 +152,6 @@ Set environment variables:
 
 - `LENS_ENVIRONMENT`: Set to "testnet" for testnet, defaults to mainnet
 - `PORT`: HTTP server port (default: 3000)
-
-### Example MCP Tool Calls
-
-#### Fetch Account
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "fetch_account",
-    "arguments": {
-      "address": "0x1234567890123456789012345678901234567890"
-    }
-  }
-}
-```
-
-#### Fetch Posts
-```json
-{
-  "jsonrpc": "2.0", 
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "fetch_posts",
-    "arguments": {
-      "pageSize": 5,
-      "author": "0x1234567890123456789012345678901234567890"
-    }
-  }
-}
-```
-
-#### Fetch Followers
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3, 
-  "method": "tools/call",
-  "params": {
-    "name": "fetch_followers",
-    "arguments": {
-      "account": "0x1234567890123456789012345678901234567890",
-      "pageSize": 10
-    }
-  }
-}
-```
 
 ### MCP Client Configuration
 
@@ -173,12 +220,19 @@ docker run -p 3000:3000 lens-mcp
 docker-compose -f docker/docker-compose.yml up
 ```
 
-## Architecture
+## 🏗️ Architecture & Design Principles
 
-The server is built using:
+### Built With
 - **@lens-protocol/client@canary** - Official Lens Protocol TypeScript SDK
 - **@modelcontextprotocol/sdk** - MCP server implementation
 - **Bun** - Fast JavaScript runtime and package manager
+
+### Design Principles
+1. **Workflow-Focused**: Tools match natural task subdivisions
+2. **Context Efficient**: Built-in token limits and smart pagination 
+3. **Natural Language**: Returns semantic summaries by default
+4. **Actionable Errors**: Error messages include specific guidance
+5. **Multiple Formats**: Choose between `concise`, `detailed`, or `raw` output
 
 ## Limitations
 

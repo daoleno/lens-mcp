@@ -12,8 +12,8 @@ import {
 } from '@lens-protocol/client'
 import {
   fetchAccount,
+  fetchAccountStats,
   fetchAccounts,
-  fetchAccountsBulk,
   fetchApp,
   fetchApps,
   fetchFollowers,
@@ -26,7 +26,6 @@ import {
   fetchPosts,
   fetchPostsToExplore,
   fetchTimelineHighlights,
-  fetchUsername,
   fetchUsernames,
 } from '@lens-protocol/client/actions'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -39,13 +38,19 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 
+type ResponseFormat = 'concise' | 'detailed' | 'raw'
+
+const DEFAULT_LIMITS = {
+  maxTokens: 25000,
+  maxItems: 50,
+}
+
 /**
  * Lens Protocol MCP Server
  *
- * This server provides access to Lens Protocol data and functionality
+ * Provides consolidated, agent-optimized tools for accessing Lens Protocol data
  * through the Model Context Protocol (MCP).
  */
-
 export class LensMCPServer {
   private server: Server
   private lensClient: PublicClient
@@ -64,7 +69,6 @@ export class LensMCPServer {
       }
     )
 
-    // Initialize Lens client (default to mainnet)
     this.lensClient = PublicClient.create({
       environment: process.env.LENS_ENVIRONMENT === 'testnet' ? testnet : mainnet,
     })
@@ -74,347 +78,228 @@ export class LensMCPServer {
   }
 
   private setupToolHandlers() {
-    // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [
           {
-            name: 'fetch_account',
-            description: 'Fetch a Lens Protocol account/profile by address',
+            name: 'lens_search',
+            description:
+              'When you need to find or discover anything on Lens Protocol - accounts, posts, usernames, apps, or groups. Perfect for exploring and discovering content based on queries, names, or topics.',
             inputSchema: {
               type: 'object',
               properties: {
-                address: {
+                for: {
                   type: 'string',
-                  description: 'Ethereum address of the account',
+                  description:
+                    'What you want to find (natural language): "crypto accounts", "DeFi posts", "lens usernames", "popular apps"',
                 },
-              },
-              required: ['address'],
-            },
-          },
-          {
-            name: 'fetch_posts',
-            description: 'Fetch posts from Lens Protocol with optional filters',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of posts to fetch (default: 10)',
-                  default: 10,
-                },
-                cursor: {
-                  type: 'string',
-                  description: 'Pagination cursor for next page',
-                },
-                author: {
-                  type: 'string',
-                  description: 'Filter by author address',
-                },
-              },
-            },
-          },
-          {
-            name: 'fetch_followers',
-            description: 'Fetch followers of a specific account',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                account: {
-                  type: 'string',
-                  description: 'Ethereum address of the account',
-                },
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of followers to fetch (default: 10)',
-                  default: 10,
-                },
-              },
-              required: ['account'],
-            },
-          },
-          {
-            name: 'fetch_following',
-            description: 'Fetch accounts that a specific account follows',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                account: {
-                  type: 'string',
-                  description: 'Ethereum address of the account',
-                },
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of following to fetch (default: 10)',
-                  default: 10,
-                },
-              },
-              required: ['account'],
-            },
-          },
-          {
-            name: 'search_accounts',
-            description: 'Search for Lens Protocol accounts/profiles',
-            inputSchema: {
-              type: 'object',
-              properties: {
                 query: {
                   type: 'string',
-                  description: 'Search query for accounts',
+                  description: 'Search terms or keywords',
                 },
-                pageSize: {
+                type: {
+                  type: 'string',
+                  enum: ['accounts', 'posts', 'usernames', 'apps', 'groups'],
+                  description: 'Type of content to search for',
+                },
+                show: {
+                  type: 'string',
+                  enum: ['concise', 'detailed', 'raw'],
+                  default: 'concise',
+                  description: 'How much detail to include',
+                },
+                limit: {
                   type: 'number',
-                  description: 'Number of results to return (default: 10)',
                   default: 10,
+                  maximum: 50,
+                  description: 'Maximum results to return',
+                },
+                filters: {
+                  type: 'object',
+                  properties: {
+                    namespace: {
+                      type: 'string',
+                      description: 'Username namespace to filter by',
+                    },
+                  },
                 },
               },
-              required: ['query'],
+              required: ['query', 'type'],
             },
           },
           {
-            name: 'search_posts',
-            description: 'Search for posts/publications on Lens Protocol',
+            name: 'lens_profile',
+            description:
+              'When you want to learn everything about a Lens Protocol account - their identity, social connections, influence, and activity. Perfect for understanding who someone is, their network, and their impact on the platform.',
             inputSchema: {
               type: 'object',
               properties: {
-                query: {
+                who: {
                   type: 'string',
-                  description: 'Search query for posts',
+                  description: 'Ethereum address or username of the account to analyze',
                 },
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of results to return (default: 10)',
-                  default: 10,
-                },
-              },
-              required: ['query'],
-            },
-          },
-          {
-            name: 'fetch_apps',
-            description: 'Fetch Lens Protocol applications',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of apps to fetch (default: 10)',
-                  default: 10,
-                },
-                cursor: {
-                  type: 'string',
-                  description: 'Pagination cursor',
-                },
-              },
-            },
-          },
-          {
-            name: 'fetch_groups',
-            description: 'Fetch groups from Lens Protocol',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of groups to fetch (default: 10)',
-                  default: 10,
-                },
-                cursor: {
-                  type: 'string',
-                  description: 'Pagination cursor',
-                },
-              },
-            },
-          },
-          {
-            name: 'fetch_usernames',
-            description: 'Fetch usernames from Lens Protocol',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                localName: {
-                  type: 'string',
-                  description: 'Local name part of the username',
-                },
-                namespace: {
-                  type: 'string',
-                  description: 'Namespace address (optional)',
-                },
-              },
-            },
-          },
-          {
-            name: 'fetch_accounts_by_usernames',
-            description: 'Fetch multiple accounts by their usernames',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                usernames: {
+                include: {
                   type: 'array',
-                  items: { type: 'string' },
-                  description: 'Array of usernames to fetch',
+                  items: {
+                    type: 'string',
+                    enum: ['basic', 'social', 'influence', 'activity', 'network'],
+                  },
+                  default: ['basic'],
+                  description:
+                    'What information to include: basic info, social connections, influence metrics, recent activity, or network analysis',
                 },
-                namespace: {
+                analyze: {
                   type: 'string',
-                  description: 'Optional namespace address',
+                  enum: ['overview', 'influence', 'engagement', 'network'],
+                  description: 'Type of analysis to perform on the profile',
+                },
+                show: {
+                  type: 'string',
+                  enum: ['concise', 'detailed', 'raw'],
+                  default: 'concise',
+                  description: 'Level of detail in response',
+                },
+                depth: {
+                  type: 'number',
+                  default: 25,
+                  maximum: 100,
+                  description: 'How many social connections or posts to analyze',
                 },
               },
-              required: ['usernames'],
+              required: ['who'],
             },
           },
           {
-            name: 'fetch_post_reactions',
-            description: 'Get reactions for a specific post',
+            name: 'lens_content',
+            description:
+              'When you want to understand how content performs and what people think about it. Perfect for analyzing post engagement, reading reactions and comments, or measuring content success and social sentiment.',
             inputSchema: {
               type: 'object',
               properties: {
-                post_id: {
+                what: {
                   type: 'string',
-                  description: 'ID of the post',
+                  description:
+                    'What you want to analyze (natural language): "reactions to this post", "comments on post", "popular posts by user", "trending content"',
                 },
-                reaction_types: {
+                about: {
+                  type: 'string',
+                  enum: ['posts', 'reactions', 'comments', 'engagement', 'highlights'],
+                  description: 'Type of content analysis to perform',
+                },
+                target: {
+                  type: 'string',
+                  description: 'Post ID (like "post_123") for post analysis, or user address for user content',
+                },
+                show: {
+                  type: 'string',
+                  enum: ['concise', 'detailed', 'raw'],
+                  default: 'concise',
+                  description: 'How detailed the analysis should be',
+                },
+                include: {
                   type: 'array',
-                  items: { type: 'string' },
-                  description: 'Filter by reaction types (UPVOTE, DOWNVOTE)',
+                  items: {
+                    type: 'string',
+                    enum: ['likes', 'dislikes', 'comments', 'quotes', 'reposts', 'metrics'],
+                  },
+                  description: 'What types of engagement to include',
                 },
-                pageSize: {
+                limit: {
                   type: 'number',
-                  description: 'Number of reactions to fetch (default: 10)',
                   default: 10,
+                  maximum: 50,
+                  description: 'Maximum items to analyze',
+                },
+                filters: {
+                  type: 'object',
+                  properties: {
+                    author: {
+                      type: 'string',
+                      description: 'Filter content by specific author',
+                    },
+                    timeframe: {
+                      type: 'string',
+                      enum: ['1d', '7d', '30d', 'all'],
+                      description: 'Time period for analysis',
+                    },
+                  },
                 },
               },
-              required: ['post_id'],
+              required: ['about', 'target'],
             },
           },
           {
-            name: 'fetch_post_references',
-            description: 'Get comments, quotes, and other references to a post',
+            name: 'lens_ecosystem',
+            description:
+              "When you want to explore the broader Lens Protocol ecosystem - trending content, popular applications, platform statistics, and community insights. Perfect for understanding what's happening across the platform and discovering ecosystem opportunities.",
             inputSchema: {
               type: 'object',
               properties: {
-                post_id: {
+                explore: {
                   type: 'string',
-                  description: 'ID of the referenced post',
+                  description:
+                    'What aspect of the ecosystem to explore (natural language): "trending apps", "platform statistics", "popular groups", "ecosystem health"',
                 },
-                reference_types: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'Types of references (COMMENT_ON, QUOTE_OF, REPOST_OF)',
-                  default: ['COMMENT_ON'],
+                view: {
+                  type: 'string',
+                  enum: ['trending', 'apps', 'groups', 'statistics', 'insights'],
+                  description: 'Type of ecosystem view to show',
                 },
-                pageSize: {
+                focus: {
+                  type: 'string',
+                  description: 'Specific app, group, or area to focus on (address or name)',
+                },
+                show: {
+                  type: 'string',
+                  enum: ['concise', 'detailed', 'raw'],
+                  default: 'concise',
+                  description: 'Level of detail to provide',
+                },
+                timeframe: {
+                  type: 'string',
+                  enum: ['1d', '7d', '30d', 'all'],
+                  default: '7d',
+                  description: 'Time period for trending analysis',
+                },
+                limit: {
                   type: 'number',
-                  description: 'Number of references to fetch (default: 10)',
-                  default: 10,
+                  default: 20,
+                  maximum: 50,
+                  description: 'Maximum items to return',
                 },
               },
-              required: ['post_id'],
-            },
-          },
-          {
-            name: 'fetch_timeline_highlights',
-            description: "Get highlighted/popular posts from a user's network",
-            inputSchema: {
-              type: 'object',
-              properties: {
-                account_address: {
-                  type: 'string',
-                  description: 'Ethereum address of the account',
-                },
-                feed_type: {
-                  type: 'string',
-                  description: 'Feed type (global, app, custom)',
-                  default: 'global',
-                },
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of highlights to fetch (default: 10)',
-                  default: 10,
-                },
-              },
-              required: ['account_address'],
-            },
-          },
-          {
-            name: 'search_usernames',
-            description: 'Search for usernames by partial match',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query for usernames',
-                },
-                namespace: {
-                  type: 'string',
-                  description: 'Optional namespace address to search within',
-                },
-                pageSize: {
-                  type: 'number',
-                  description: 'Number of results to return (default: 10)',
-                  default: 10,
-                },
-              },
-              required: ['query'],
+              required: ['view'],
             },
           },
         ],
       }
     })
 
-    // Handle tool execution
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
 
       try {
         switch (name) {
-          case 'fetch_account':
-            return await this.fetchAccount(args)
-          case 'fetch_posts':
-            return await this.fetchPosts(args)
-          case 'fetch_followers':
-            return await this.fetchFollowers(args)
-          case 'fetch_following':
-            return await this.fetchFollowing(args)
-          case 'fetch_apps':
-            return await this.fetchApps(args)
-          case 'fetch_groups':
-            return await this.fetchGroups(args)
-          case 'fetch_usernames':
-            return await this.fetchUsernames(args)
-          case 'fetch_accounts_by_usernames':
-            return await this.fetchAccountsByUsernames(args)
-          case 'fetch_post_reactions':
-            return await this.fetchPostReactions(args)
-          case 'fetch_post_references':
-            return await this.fetchPostReferences(args)
-          case 'fetch_timeline_highlights':
-            return await this.fetchTimelineHighlights(args)
-          case 'search_usernames':
-            return await this.searchUsernames(args)
-          case 'search_accounts':
-            return await this.searchAccounts(args)
-          case 'search_posts':
-            return await this.searchPosts(args)
+          case 'lens_search':
+            return await this.lensSearch(args)
+          case 'lens_profile':
+            return await this.lensProfile(args)
+          case 'lens_content':
+            return await this.lensContent(args)
+          case 'lens_ecosystem':
+            return await this.lensEcosystem(args)
           default:
-            throw new Error(`Unknown tool: ${name}`)
+            return this.createErrorResponse(name, `Unknown tool: ${name}`, {
+              suggestion: 'Available tools: lens_search, lens_profile, lens_content, lens_ecosystem',
+            })
         }
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error executing ${name}: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        }
+        return this.createErrorResponse(name, error instanceof Error ? error.message : String(error))
       }
     })
   }
 
   private setupResourceHandlers() {
-    // List available resources
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       return {
         resources: [
@@ -446,7 +331,6 @@ export class LensMCPServer {
       }
     })
 
-    // Handle resource reading
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const { uri } = request.params
 
@@ -472,695 +356,764 @@ export class LensMCPServer {
     })
   }
 
-  // Tool implementations
-  private async fetchAccount(args: any): Promise<CallToolResult> {
-    try {
-      const { address } = args
+  private createErrorResponse(toolName: string, message: string, context?: { suggestion?: string }): CallToolResult {
+    let errorText = `❌ Error in ${toolName}: ${message}`
 
-      if (!address) {
-        throw new Error('Address is required')
+    if (context?.suggestion) {
+      errorText += `\\n\\n💡 Suggestion: ${context.suggestion}`
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: errorText,
+        },
+      ],
+      isError: true,
+    }
+  }
+
+  private truncateForTokenLimit(text: string, maxTokens: number = DEFAULT_LIMITS.maxTokens): string {
+    const maxChars = maxTokens * 4
+    if (text.length <= maxChars) return text
+
+    return text.substring(0, maxChars - 100) + '\\n\\n... [Response truncated to stay within token limit]'
+  }
+
+  private formatResponse(data: any, format: ResponseFormat, summary?: string): CallToolResult {
+    let content: string
+
+    switch (format) {
+      case 'concise':
+        content = summary || this.generateSummary(data)
+        break
+      case 'detailed':
+        content = (summary || this.generateSummary(data)) + '\\n\\n' + JSON.stringify(data, null, 2)
+        break
+      case 'raw':
+        content = JSON.stringify(data, null, 2)
+        break
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: this.truncateForTokenLimit(content),
+        },
+      ],
+    }
+  }
+
+  private generateSummary(data: any): string {
+    if (data.items && Array.isArray(data.items)) {
+      const count = data.items.length
+      const hasMore = data.pageInfo?.hasNext || false
+      return `📊 Found ${count} items${hasMore ? ' (more available)' : ''}. Use format="detailed" for complete data.`
+    }
+
+    if (data.account || data.username || data.address) {
+      return `👤 Profile data retrieved. Use format="detailed" for complete information.`
+    }
+
+    return `✅ Data retrieved successfully. Use format="detailed" for complete information.`
+  }
+
+  // Natural language parameter mapping
+  private mapParameters(_toolName: string, args: any): any {
+    const mapped = { ...args }
+
+    // Map natural language parameters to technical ones
+    if (args.show) mapped.format = args.show
+    if (args.who) mapped.address = args.who
+
+    // Handle about parameter for lens_content
+    if (args.about) {
+      mapped.content_type = args.about
+      mapped.about = args.about
+    }
+
+    // Handle what parameter (natural language descriptions)
+    if (args.what && args.what.includes('reactions')) {
+      mapped.content_type = 'reactions'
+      mapped.about = 'reactions'
+    }
+    if (args.what && args.what.includes('comments')) {
+      mapped.content_type = 'references'
+      mapped.about = 'references'
+    }
+    if (args.what && args.what.includes('posts')) {
+      mapped.content_type = 'posts'
+      mapped.about = 'posts'
+    }
+
+    // Handle include parameter for lens_content (e.g., include: ['comments'])
+    if (args.include && args.include.includes('comments')) {
+      mapped.content_type = 'references'
+      mapped.about = 'references'
+    }
+
+    // Handle for parameter for lens_search
+    if (args.for && args.for.includes('accounts')) mapped.type = 'accounts'
+    if (args.for && args.for.includes('posts')) mapped.type = 'posts'
+    if (args.for && args.for.includes('apps')) mapped.type = 'apps'
+    if (args.for && args.for.includes('usernames')) mapped.type = 'usernames'
+
+    return mapped
+  }
+
+  private async lensSearch(args: any): Promise<CallToolResult> {
+    try {
+      // Apply parameter mapping
+      const mapped = this.mapParameters('lens_search', args)
+      const { query, type, show = 'concise', limit = 10, filters = {} } = mapped
+
+      if (!query || !type) {
+        return this.createErrorResponse(
+          'lens_search',
+          'I need to know what you want to find and what type of content to search for.',
+          {
+            suggestion: `Try this:
+• For accounts: lens_search(query="vitalik", type="accounts")
+• For posts: lens_search(query="DeFi trends", type="posts") 
+• For apps: lens_search(query="social", type="apps")`,
+          }
+        )
       }
 
-      const result = await fetchAccount(this.lensClient, {
+      const pageSize = Math.min(limit, DEFAULT_LIMITS.maxItems) <= 10 ? PageSize.Ten : PageSize.Fifty
+      let result: any
+      let summary: string
+
+      switch (type) {
+        case 'accounts': {
+          result = await fetchAccounts(this.lensClient, {
+            filter: { searchBy: { localNameQuery: query } },
+            pageSize,
+          })
+
+          if (result.isErr()) {
+            throw new Error(`Account search failed: ${result.error.message}`)
+          }
+
+          summary =
+            `🔍 Found ${result.value.items.length} accounts matching "${query}":` +
+            result.value.items
+              .slice(0, 5)
+              .map((account: any) => `\\n• ${account.username?.localName || 'Unknown'} (${account.address})`)
+              .join('') +
+            (result.value.items.length > 5 ? `\\n... and ${result.value.items.length - 5} more` : '')
+          break
+        }
+
+        case 'posts': {
+          result = await fetchPosts(this.lensClient, {
+            filter: { searchQuery: query },
+            pageSize,
+          })
+
+          if (result.isErr()) {
+            throw new Error(`Post search failed: ${result.error.message}`)
+          }
+
+          summary =
+            `📝 Found ${result.value.items.length} posts matching "${query}":` +
+            result.value.items
+              .slice(0, 3)
+              .map(
+                (post: any) =>
+                  `\\n• "${post.metadata?.content?.substring(0, 100) || 'No content'}..." by ${post.author.username?.localName || post.author.address}`
+              )
+              .join('')
+          break
+        }
+
+        case 'apps': {
+          result = await fetchApps(this.lensClient, { pageSize })
+
+          if (result.isErr()) {
+            throw new Error(`Apps search failed: ${result.error.message}`)
+          }
+
+          const filteredApps = result.value.items.filter(
+            (app: any) =>
+              app.metadata?.name?.toLowerCase().includes(query.toLowerCase()) ||
+              app.metadata?.description?.toLowerCase().includes(query.toLowerCase())
+          )
+
+          result.value.items = filteredApps
+          summary =
+            `🚀 Found ${filteredApps.length} apps matching "${query}":` +
+            filteredApps
+              .slice(0, 5)
+              .map(
+                (app: any) =>
+                  `\\n• ${app.metadata?.name || 'Unknown'} - ${app.metadata?.description?.substring(0, 50) || 'No description'}...`
+              )
+              .join('')
+          break
+        }
+
+        case 'groups': {
+          result = await fetchGroups(this.lensClient, { pageSize })
+
+          if (result.isErr()) {
+            throw new Error(`Groups search failed: ${result.error.message}`)
+          }
+
+          const filteredGroups = result.value.items.filter(
+            (group: any) =>
+              group.metadata?.name?.toLowerCase().includes(query.toLowerCase()) ||
+              group.metadata?.description?.toLowerCase().includes(query.toLowerCase())
+          )
+
+          result.value.items = filteredGroups
+          summary =
+            `👥 Found ${filteredGroups.length} groups matching "${query}":` +
+            filteredGroups
+              .slice(0, 5)
+              .map(
+                (group: any) =>
+                  `\\n• ${group.metadata?.name || 'Unknown'} - ${group.metadata?.description?.substring(0, 50) || 'No description'}...`
+              )
+              .join('')
+          break
+        }
+
+        case 'usernames': {
+          // Integrate username search functionality from old lens_usernames
+          const searchFilter: any = { localNameQuery: query }
+          if (filters.namespace) searchFilter.namespace = evmAddress(filters.namespace)
+
+          result = await fetchUsernames(this.lensClient, {
+            filter: searchFilter,
+            pageSize,
+          })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to search usernames: ${result.error.message}`)
+          }
+
+          summary =
+            `🔍 Found ${result.value.items.length} usernames matching "${query}":` +
+            result.value.items
+              .slice(0, 5)
+              .map(
+                (username: any) =>
+                  `\\n• ${username.localName}${username.namespace ? `@${username.namespace}` : ''} ${username.isAvailable ? '(available)' : '(taken)'}`
+              )
+              .join('')
+          break
+        }
+
+        default:
+          return this.createErrorResponse(
+            'lens_search',
+            `I don't know how to search for "${type}". I can search for accounts, posts, usernames, apps, or groups.`,
+            {
+              suggestion: 'Try: accounts, posts, usernames, apps, or groups',
+            }
+          )
+      }
+
+      return this.formatResponse(result.value, show as ResponseFormat, summary)
+    } catch (error) {
+      return this.createErrorResponse('lens_search', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  private async lensProfile(args: any): Promise<CallToolResult> {
+    try {
+      // Apply parameter mapping
+      const mapped = this.mapParameters('lens_profile', args)
+      const { who: address, include = ['basic'], show = 'concise', depth = 25 } = mapped
+
+      if (!address) {
+        return this.createErrorResponse('lens_profile', 'I need to know which account to analyze.', {
+          suggestion: `Examples:
+• Basic profile: lens_profile(who="0x1234...")
+• Full analysis: lens_profile(who="0x1234...", include=["basic", "social", "influence"])
+• Network analysis: lens_profile(who="0x1234...", analyze="network")`,
+        })
+      }
+
+      const pageSize = Math.min(depth, DEFAULT_LIMITS.maxItems) <= 10 ? PageSize.Ten : PageSize.Fifty
+
+      // Comprehensive profile analysis - supports multiple includes
+      const profileData: any = {}
+      const summaryParts: string[] = []
+
+      // Always fetch basic account info first
+      const accountResult = await fetchAccount(this.lensClient, {
         address: evmAddress(address),
       })
 
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch account')
+      if (accountResult.isErr()) {
+        throw new Error(`Failed to fetch account: ${accountResult.error.message}`)
       }
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(result.value, null, 2),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching account: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchPosts(args: any): Promise<CallToolResult> {
-    try {
-      const { pageSize = 10, cursor, author } = args
-
-      // Convert pageSize to Lens Protocol enum
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      let result: any
-
-      if (author) {
-        // Fetch posts by specific author
-        result = await fetchPosts(this.lensClient, {
-          filter: {
-            authors: [evmAddress(author)],
-          },
-          pageSize: lensPageSize,
-          ...(cursor && { cursor }),
-        })
-      } else {
-        // Fetch explore posts (general feed)
-        result = await fetchPostsToExplore(this.lensClient, {
-          pageSize: lensPageSize,
-          ...(cursor && { cursor }),
-        })
-      }
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch posts')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                posts: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching posts: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchFollowers(args: any): Promise<CallToolResult> {
-    try {
-      const { account, pageSize = 10 } = args
+      const account = accountResult.value
 
       if (!account) {
-        throw new Error('Account address is required')
+        throw new Error('Account not found')
       }
 
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
+      profileData.account = account
 
-      const result = await fetchFollowers(this.lensClient, {
-        account: evmAddress(account),
-        pageSize: lensPageSize,
-      })
+      // Process each include type
+      for (const includeType of include) {
+        switch (includeType) {
+          case 'basic': {
+            summaryParts.push(
+              `👤 **Profile**: ${account.username?.localName || 'No username'} (${address.substring(0, 10)}...)`
+            )
 
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch followers')
-      }
+            // Fetch account stats separately as Account doesn't have stats property
+            const statsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(address) })
+            const stats = statsResult.isErr() ? null : statsResult.value
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                followers: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching followers: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchFollowing(args: any): Promise<CallToolResult> {
-    try {
-      const { account, pageSize = 10 } = args
-
-      if (!account) {
-        throw new Error('Account address is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const result = await fetchFollowing(this.lensClient, {
-        account: evmAddress(account),
-        pageSize: lensPageSize,
-      })
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch following')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                following: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching following: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async searchAccounts(args: any): Promise<CallToolResult> {
-    try {
-      const { query, pageSize = 10 } = args
-
-      if (!query) {
-        throw new Error('Search query is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const result = await fetchAccounts(this.lensClient, {
-        filter: {
-          searchBy: {
-            localNameQuery: query,
-          },
-        },
-        pageSize: lensPageSize,
-      })
-
-      if (result.isErr()) {
-        throw new Error(`Failed to search accounts: ${result.error}`)
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                accounts: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error searching accounts: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async searchPosts(args: any): Promise<CallToolResult> {
-    try {
-      const { query, pageSize = 10 } = args
-
-      if (!query) {
-        throw new Error('Search query is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const result = await fetchPosts(this.lensClient, {
-        filter: {
-          searchQuery: query,
-        },
-        pageSize: lensPageSize,
-      })
-
-      if (result.isErr()) {
-        throw new Error(`Failed to search posts: ${result.error}`)
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                posts: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error searching posts: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchApps(args: any): Promise<CallToolResult> {
-    try {
-      const { pageSize = 10, cursor } = args
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const result = await fetchApps(this.lensClient, {
-        pageSize: lensPageSize,
-        ...(cursor && { cursor }),
-      })
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch apps')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                apps: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching apps: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchGroups(args: any): Promise<CallToolResult> {
-    try {
-      const { pageSize = 10, cursor } = args
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const result = await fetchGroups(this.lensClient, {
-        pageSize: lensPageSize,
-        ...(cursor && { cursor }),
-      })
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch groups')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                groups: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching groups: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchUsernames(args: any): Promise<CallToolResult> {
-    try {
-      const { localName, namespace } = args
-
-      if (!localName) {
-        throw new Error('Local name is required')
-      }
-
-      const usernameRequest: any = {
-        username: {
-          localName,
-          ...(namespace && { namespace: evmAddress(namespace) }),
-        },
-      }
-
-      const result = await fetchUsername(this.lensClient, usernameRequest)
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch username')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(result.value, null, 2),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching username: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchAccountsByUsernames(args: any): Promise<CallToolResult> {
-    try {
-      const { usernames, namespace } = args
-
-      if (!usernames || !Array.isArray(usernames) || usernames.length === 0) {
-        throw new Error('Usernames array is required and must not be empty')
-      }
-
-      const usernameObjects = usernames.map((name: string) => ({
-        localName: name,
-        ...(namespace && { namespace: evmAddress(namespace) }),
-      }))
-
-      const result = await fetchAccountsBulk(this.lensClient, {
-        usernames: usernameObjects,
-      })
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch accounts by usernames')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(result.value, null, 2),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching accounts by usernames: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  private async fetchPostReactions(args: any): Promise<CallToolResult> {
-    try {
-      const { post_id, reaction_types, pageSize = 10 } = args
-
-      if (!post_id) {
-        throw new Error('Post ID is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const filter: any = {}
-      if (reaction_types && Array.isArray(reaction_types)) {
-        filter.anyOf = reaction_types.map((type: string) => {
-          switch (type.toUpperCase()) {
-            case 'UPVOTE':
-              return PostReactionType.Upvote
-            case 'DOWNVOTE':
-              return PostReactionType.Downvote
-            default:
-              throw new Error(`Invalid reaction type: ${type}`)
+            summaryParts.push(
+              `📊 **Stats**: ${stats?.graphFollowStats?.followers || 0} followers, ${stats?.graphFollowStats?.following || 0} following`
+            )
+            summaryParts.push(
+              `📝 **Bio**: ${account.metadata?.bio?.substring(0, 100) || 'No bio'}${(account.metadata?.bio?.length || 0) > 100 ? '...' : ''}`
+            )
+            break
           }
+
+          case 'social': {
+            const [followersResult, followingResult] = await Promise.all([
+              fetchFollowers(this.lensClient, { account: evmAddress(address), pageSize: PageSize.Ten }),
+              fetchFollowing(this.lensClient, { account: evmAddress(address), pageSize: PageSize.Ten }),
+            ])
+
+            if (!followersResult.isErr()) {
+              profileData.followers = followersResult.value
+              summaryParts.push(
+                `👥 **Top Followers**: ${followersResult.value.items
+                  .slice(0, 3)
+                  .map((f: any) => f.username?.localName || f.address?.substring(0, 8) || 'Unknown')
+                  .join(', ')}`
+              )
+            }
+
+            if (!followingResult.isErr()) {
+              profileData.following = followingResult.value
+              summaryParts.push(
+                `🔗 **Following**: ${followingResult.value.items
+                  .slice(0, 3)
+                  .map((f: any) => f.username?.localName || f.address?.substring(0, 8) || 'Unknown')
+                  .join(', ')}`
+              )
+            }
+            break
+          }
+
+          case 'influence': {
+            const postsResult = await fetchPosts(this.lensClient, {
+              filter: { authors: [evmAddress(address)] },
+              pageSize: PageSize.Ten,
+            })
+
+            if (!postsResult.isErr()) {
+              profileData.recentPosts = postsResult.value
+              const avgReactions =
+                postsResult.value.items.reduce((sum: number, post: any) => sum + (post.stats?.reactions || 0), 0) /
+                Math.max(postsResult.value.items.length, 1)
+
+              // Fetch stats for influence calculation
+              const influenceStatsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(address) })
+              const followerCount = influenceStatsResult.isErr()
+                ? 0
+                : influenceStatsResult.value?.graphFollowStats?.followers || 0
+              const engagementRate = followerCount > 0 ? (avgReactions / followerCount) * 100 : 0
+
+              summaryParts.push(
+                `⭐ **Influence**: ${avgReactions.toFixed(1)} avg reactions, ${engagementRate.toFixed(2)}% engagement rate`
+              )
+            }
+            break
+          }
+
+          case 'activity': {
+            // Fetch both timeline highlights and user's recent posts
+            const [timelineResult, postsResult] = await Promise.all([
+              fetchTimelineHighlights(this.lensClient, {
+                account: evmAddress(address),
+                pageSize,
+                filter: { feeds: [{ globalFeed: true }] },
+              }),
+              fetchPosts(this.lensClient, {
+                filter: { authors: [evmAddress(address)] },
+                pageSize,
+              }),
+            ])
+
+            if (!timelineResult.isErr()) {
+              profileData.timeline = timelineResult.value
+              summaryParts.push(`📰 **Timeline Highlights**: ${timelineResult.value.items.length} activities`)
+            }
+
+            if (!postsResult.isErr()) {
+              profileData.recentPosts = postsResult.value
+              const posts = postsResult.value.items
+              const avgReactions = posts.length > 0 
+                ? posts.reduce((sum: number, p: any) => sum + (p.stats?.reactions || 0), 0) / posts.length 
+                : 0
+
+              summaryParts.push(
+                `📝 **Recent Posts**: ${posts.length} posts, avg ${avgReactions.toFixed(1)} reactions`
+              )
+
+              // Add preview of top posts
+              if (posts.length > 0) {
+                const topPosts = posts.slice(0, 2).map((post: any, i: number) => 
+                  `  ${i + 1}. "${post.metadata?.content?.substring(0, 60) || 'No content'}..." (${post.stats?.reactions || 0} ❤️)`
+                ).join('\n')
+                summaryParts.push(`**Top Posts**:\n${topPosts}`)
+              }
+            }
+            break
+          }
+
+          case 'network': {
+            const [followersResult, followingResult] = await Promise.all([
+              fetchFollowers(this.lensClient, { account: evmAddress(address), pageSize }),
+              fetchFollowing(this.lensClient, { account: evmAddress(address), pageSize }),
+            ])
+
+            if (!followersResult.isErr() && !followingResult.isErr()) {
+              const followerCount = followersResult.value.items.length
+              const followingCount = followingResult.value.items.length
+              const networkRatio = followingCount > 0 ? followerCount / followingCount : followerCount
+
+              profileData.networkMetrics = {
+                followers: followerCount,
+                following: followingCount,
+                ratio: networkRatio,
+              }
+
+              summaryParts.push(
+                `🌐 **Network**: ${networkRatio.toFixed(2)} ratio (${networkRatio > 2 ? 'High influence' : networkRatio > 0.5 ? 'Balanced' : 'Building network'})`
+              )
+            }
+            break
+          }
+        }
+      }
+
+      const summary = summaryParts.join('\\n')
+
+      return this.formatResponse(profileData, show as ResponseFormat, summary)
+    } catch (error) {
+      return this.createErrorResponse('lens_profile', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  private async lensContent(args: any): Promise<CallToolResult> {
+    try {
+      // Apply parameter mapping
+      const mapped = this.mapParameters('lens_content', args)
+      const { content_type, about, target, show = 'concise', limit = 10, filters = {} } = mapped
+      const finalContentType = content_type || about
+
+      if (!finalContentType || !target) {
+        return this.createErrorResponse('lens_content', 'Missing required parameters: about and target', {
+          suggestion:
+            'Examples:\\n• For post reactions: lens_content(about="reactions", target="post_123")\\n• For user posts: lens_content(about="posts", target="0x1234...")',
         })
       }
 
-      const result = await fetchPostReactions(this.lensClient, {
-        post: postId(post_id),
-        pageSize: lensPageSize,
-        ...(Object.keys(filter).length > 0 && { filter }),
-      })
+      const pageSize = Math.min(limit, DEFAULT_LIMITS.maxItems) <= 10 ? PageSize.Ten : PageSize.Fifty
+      let result: any
+      let summary: string
 
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch post reactions')
-      }
+      switch (finalContentType) {
+        case 'posts': {
+          if (filters.author) {
+            result = await fetchPosts(this.lensClient, {
+              filter: { authors: [evmAddress(filters.author)] },
+              pageSize,
+            })
+          } else {
+            result = await fetchPosts(this.lensClient, {
+              filter: { authors: [evmAddress(target)] },
+              pageSize,
+            })
+          }
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                reactions: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching post reactions: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch posts: ${result.error.message}`)
+          }
 
-  private async fetchPostReferences(args: any): Promise<CallToolResult> {
-    try {
-      const { post_id, reference_types = ['COMMENT_ON'], pageSize = 10 } = args
-
-      if (!post_id) {
-        throw new Error('Post ID is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const referenceTypeEnums = reference_types.map((type: string) => {
-        switch (type.toUpperCase()) {
-          case 'COMMENT_ON':
-            return PostReferenceType.CommentOn
-          case 'QUOTE_OF':
-            return PostReferenceType.QuoteOf
-          case 'REPOST_OF':
-            return PostReferenceType.RepostOf
-          default:
-            throw new Error(`Invalid reference type: ${type}`)
+          summary =
+            `📝 ${result.value.items.length} posts from ${target.substring(0, 10)}...:` +
+            result.value.items
+              .slice(0, 5)
+              .map(
+                (post: any) =>
+                  `\\n• "${post.metadata?.content?.substring(0, 100) || 'No content'}..." (${post.stats?.reactions || 0} reactions)`
+              )
+              .join('')
+          break
         }
-      })
 
-      const result = await fetchPostReferences(this.lensClient, {
-        referencedPost: postId(post_id),
-        referenceTypes: referenceTypeEnums,
-        pageSize: lensPageSize,
-      })
+        case 'reactions': {
+          const reactionFilters: any = {}
+          if (filters.reaction_types) {
+            reactionFilters.anyOf = filters.reaction_types.map((type: string) => {
+              switch (type.toUpperCase()) {
+                case 'UPVOTE':
+                  return PostReactionType.Upvote
+                case 'DOWNVOTE':
+                  return PostReactionType.Downvote
+                default:
+                  throw new Error(`Invalid reaction type: ${type}`)
+              }
+            })
+          }
 
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch post references')
+          result = await fetchPostReactions(this.lensClient, {
+            post: postId(target),
+            pageSize,
+            ...(Object.keys(reactionFilters).length > 0 && { filter: reactionFilters }),
+          })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch reactions: ${result.error.message}`)
+          }
+
+          summary =
+            `👍 ${result.value.items.length} reactions to post ${target.substring(0, 15)}...:` +
+            result.value.items
+              .slice(0, 10)
+              .map(
+                (reaction: any) =>
+                  `\\n• ${reaction.reactionType} by ${reaction.account.username?.localName || reaction.account.address.substring(0, 10)}`
+              )
+              .join('')
+          break
+        }
+
+        case 'references': {
+          const referenceTypes = (filters.reference_types || ['COMMENT_ON']).map((type: string) => {
+            switch (type.toUpperCase()) {
+              case 'COMMENT_ON':
+                return PostReferenceType.CommentOn
+              case 'QUOTE_OF':
+                return PostReferenceType.QuoteOf
+              case 'REPOST_OF':
+                return PostReferenceType.RepostOf
+              default:
+                throw new Error(`Invalid reference type: ${type}`)
+            }
+          })
+
+          result = await fetchPostReferences(this.lensClient, {
+            referencedPost: postId(target),
+            referenceTypes,
+            pageSize,
+          })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch references: ${result.error.message}`)
+          }
+
+          summary =
+            `💬 ${result.value.items.length} references to post ${target.substring(0, 15)}...:` +
+            result.value.items
+              .slice(0, 5)
+              .map(
+                (ref: any) =>
+                  `\\n• ${ref.referenceType} by ${ref.author.username?.localName || ref.author.address.substring(0, 10)}: "${ref.metadata?.content?.substring(0, 80) || 'No content'}..."`
+              )
+              .join('')
+          break
+        }
+
+        case 'highlights': {
+          result = await fetchTimelineHighlights(this.lensClient, {
+            account: evmAddress(target),
+            pageSize,
+            filter: { feeds: [{ globalFeed: true }] },
+          })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch highlights: ${result.error.message}`)
+          }
+
+          summary =
+            `⭐ ${result.value.items.length} timeline highlights for ${target.substring(0, 10)}...:` +
+            result.value.items
+              .slice(0, 5)
+              .map(
+                (post: any) =>
+                  `\\n• "${post.metadata?.content?.substring(0, 80) || 'No content'}..." (${post.stats?.reactions || 0} reactions)`
+              )
+              .join('')
+          break
+        }
+
+        default:
+          return this.createErrorResponse('lens_content', `Invalid content_type: ${finalContentType}`, {
+            suggestion: 'Use one of: posts, reactions, references, highlights',
+          })
       }
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                references: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
+      return this.formatResponse(result.value, show as ResponseFormat, summary)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching post references: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
+      return this.createErrorResponse('lens_content', error instanceof Error ? error.message : String(error))
     }
   }
 
-  private async fetchTimelineHighlights(args: any): Promise<CallToolResult> {
+  private async lensEcosystem(args: any): Promise<CallToolResult> {
     try {
-      const { account_address, feed_type = 'global', pageSize = 10 } = args
+      // Apply parameter mapping
+      const mapped = this.mapParameters('lens_ecosystem', args)
+      const { view, show = 'concise', limit = 20 } = mapped
 
-      if (!account_address) {
-        throw new Error('Account address is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const filter: any = {}
-      if (feed_type === 'global') {
-        filter.feeds = [{ globalFeed: true }]
-      }
-
-      const result = await fetchTimelineHighlights(this.lensClient, {
-        account: evmAddress(account_address),
-        pageSize: lensPageSize,
-        ...(Object.keys(filter).length > 0 && { filter }),
-      })
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to fetch timeline highlights')
-      }
-
-      return {
-        content: [
+      if (!view) {
+        return this.createErrorResponse(
+          'lens_ecosystem',
+          'I need to know what aspect of the ecosystem you want to explore.',
           {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                highlights: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
+            suggestion: `Examples:
+• Popular apps: lens_ecosystem(view="apps")
+• Trending content: lens_ecosystem(view="trending")
+• Platform statistics: lens_ecosystem(view="statistics")
+• Community groups: lens_ecosystem(view="groups")`,
+          }
+        )
       }
+
+      const pageSize = Math.min(limit, DEFAULT_LIMITS.maxItems) <= 10 ? PageSize.Ten : PageSize.Fifty
+      let result: any
+      let summary: string
+
+      switch (view) {
+        case 'apps': {
+          result = await fetchApps(this.lensClient, { pageSize })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch apps: ${result.error.message}`)
+          }
+
+          summary =
+            `🚀 ${result.value.items.length} applications in the Lens Protocol ecosystem:` +
+            result.value.items
+              .slice(0, 10)
+              .map(
+                (app: any) =>
+                  `\\n• ${app.metadata?.name || 'Unknown'}: ${app.metadata?.description?.substring(0, 60) || 'No description'}...`
+              )
+              .join('')
+          break
+        }
+
+        case 'groups': {
+          result = await fetchGroups(this.lensClient, { pageSize })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch groups: ${result.error.message}`)
+          }
+
+          summary =
+            `👥 ${result.value.items.length} community groups on Lens Protocol:` +
+            result.value.items
+              .slice(0, 10)
+              .map(
+                (group: any) =>
+                  `\\n• ${group.metadata?.name || 'Unknown'}: ${group.metadata?.description?.substring(0, 60) || 'No description'}...`
+              )
+              .join('')
+          break
+        }
+
+        case 'trending': {
+          // Use fetchPostsToExplore for trending content
+          result = await fetchPostsToExplore(this.lensClient, { pageSize })
+
+          if (result.isErr()) {
+            throw new Error(`Failed to fetch trending content: ${result.error.message}`)
+          }
+
+          summary =
+            `📈 ${result.value.items.length} trending posts on Lens Protocol:` +
+            result.value.items
+              .slice(0, 5)
+              .map(
+                (post: any) =>
+                  `\\n• "${post.metadata?.content?.substring(0, 80) || 'No content'}..." by ${post.author.username?.localName || post.author.address.substring(0, 8)} (${post.stats?.reactions || 0} reactions)`
+              )
+              .join('')
+          break
+        }
+
+        case 'statistics': {
+          // Combine multiple data sources for ecosystem statistics
+          const [appsResult, groupsResult, postsResult] = await Promise.all([
+            fetchApps(this.lensClient, { pageSize: PageSize.Ten }),
+            fetchGroups(this.lensClient, { pageSize: PageSize.Ten }),
+            fetchPostsToExplore(this.lensClient, { pageSize: PageSize.Ten }),
+          ])
+
+          result = {
+            apps: appsResult.isErr() ? [] : appsResult.value.items,
+            groups: groupsResult.isErr() ? [] : groupsResult.value.items,
+            posts: postsResult.isErr() ? [] : postsResult.value.items,
+          }
+
+          summary =
+            `📊 Lens Protocol Ecosystem Statistics:` +
+            `\\n🚀 Active Applications: ${result.apps.length}+` +
+            `\\n👥 Community Groups: ${result.groups.length}+` +
+            `\\n📝 Recent Posts: ${result.posts.length}+ trending` +
+            `\\n💡 Platform Health: ${result.apps.length + result.groups.length + result.posts.length > 20 ? 'Very Active' : 'Active'}`
+          break
+        }
+
+        case 'insights': {
+          // Provide ecosystem insights and analysis
+          const appsResult = await fetchApps(this.lensClient, { pageSize })
+
+          if (appsResult.isErr()) {
+            throw new Error(`Failed to fetch ecosystem data: ${appsResult.error.message}`)
+          }
+
+          result = appsResult.value
+          const appTypes = result.items.reduce((acc: any, app: any) => {
+            const category = app.metadata?.category || 'Other'
+            acc[category] = (acc[category] || 0) + 1
+            return acc
+          }, {})
+
+          summary =
+            `🔍 Lens Protocol Ecosystem Insights:` +
+            `\\n📊 Total Applications: ${result.items.length}` +
+            `\\n🏷️ Categories: ${Object.keys(appTypes).join(', ')}` +
+            `\\n⭐ Most Active Category: ${Object.entries(appTypes).sort(([, a]: any, [, b]: any) => b - a)[0]?.[0] || 'Social'}` +
+            `\\n🎯 Growth Areas: Community tools, DeFi integration, Content creation`
+          break
+        }
+
+        default:
+          return this.createErrorResponse(
+            'lens_ecosystem',
+            `I don't understand "${view}". I can show you apps, groups, trending content, statistics, or insights.`,
+            {
+              suggestion: 'Try: apps, groups, trending, statistics, or insights',
+            }
+          )
+      }
+
+      return this.formatResponse(result, show as ResponseFormat, summary)
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error fetching timeline highlights: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
+      return this.createErrorResponse('lens_ecosystem', error instanceof Error ? error.message : String(error))
     }
   }
 
-  private async searchUsernames(args: any): Promise<CallToolResult> {
-    try {
-      const { query, namespace, pageSize = 10 } = args
 
-      if (!query) {
-        throw new Error('Search query is required')
-      }
-
-      const lensPageSize = pageSize <= 10 ? PageSize.Ten : PageSize.Fifty
-
-      const filter: any = { localNameQuery: query }
-      if (namespace) {
-        filter.namespace = evmAddress(namespace)
-      }
-
-      const result = await fetchUsernames(this.lensClient, {
-        filter,
-        pageSize: lensPageSize,
-      })
-
-      if (result.isErr()) {
-        throw new Error(result.error.message || 'Failed to search usernames')
-      }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                usernames: result.value.items,
-                pageInfo: result.value.pageInfo,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      }
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error searching usernames: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      }
-    }
-  }
-
-  // Resource implementations
   private async readAccountResource(address: string) {
     try {
       const result = await fetchAccount(this.lensClient, {
@@ -1284,172 +1237,36 @@ export class LensMCPServer {
           result: {
             tools: [
               {
-                name: 'fetch_account',
-                description: 'Fetch a Lens Protocol account/profile by address',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    address: { type: 'string', description: 'Ethereum address of the account' },
-                  },
-                  required: ['address'],
-                },
+                name: 'lens_search',
+                description: 'When you need to find or discover anything on Lens Protocol',
+                inputSchema: { type: 'object', properties: {} },
               },
               {
-                name: 'fetch_posts',
-                description: 'Fetch posts from Lens Protocol with optional filters',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    pageSize: { type: 'number', description: 'Number of posts to fetch (default: 10)' },
-                    author: { type: 'string', description: 'Filter by author address' },
-                  },
-                },
+                name: 'lens_profile',
+                description: 'When you want to learn everything about a Lens Protocol account',
+                inputSchema: { type: 'object', properties: {} },
               },
               {
-                name: 'fetch_followers',
-                description: 'Fetch followers of a specific account',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    account: { type: 'string', description: 'Ethereum address of the account' },
-                    pageSize: { type: 'number', description: 'Number of followers to fetch (default: 10)' },
-                  },
-                  required: ['account'],
-                },
+                name: 'lens_content',
+                description: 'When you want to understand how content performs',
+                inputSchema: { type: 'object', properties: {} },
               },
               {
-                name: 'fetch_following',
-                description: 'Fetch accounts that a specific account follows',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    account: { type: 'string', description: 'Ethereum address of the account' },
-                    pageSize: { type: 'number', description: 'Number of following to fetch (default: 10)' },
-                  },
-                  required: ['account'],
-                },
+                name: 'lens_ecosystem',
+                description: 'When you want to explore the broader Lens Protocol ecosystem',
+                inputSchema: { type: 'object', properties: {} },
               },
               {
-                name: 'fetch_apps',
-                description: 'Fetch Lens Protocol applications',
+                name: 'lens_user_posts',
+                description: 'Get a user and their recent posts in one call (Agent-optimized composite operation)',
                 inputSchema: {
                   type: 'object',
                   properties: {
-                    pageSize: { type: 'number', description: 'Number of apps to fetch (default: 10)' },
+                    username: { type: 'string', description: 'Username or address to search for' },
+                    limit: { type: 'number', description: 'Number of posts to fetch', default: 10 },
+                    show: { type: 'string', enum: ['concise', 'detailed', 'raw'], default: 'concise' },
                   },
-                },
-              },
-              {
-                name: 'fetch_groups',
-                description: 'Fetch groups from Lens Protocol',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    pageSize: { type: 'number', description: 'Number of groups to fetch (default: 10)' },
-                  },
-                },
-              },
-              {
-                name: 'fetch_usernames',
-                description: 'Fetch usernames from Lens Protocol',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    localName: { type: 'string', description: 'Local name part of the username' },
-                  },
-                  required: ['localName'],
-                },
-              },
-              {
-                name: 'fetch_accounts_by_usernames',
-                description: 'Fetch multiple accounts by their usernames',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    usernames: { type: 'array', items: { type: 'string' }, description: 'Array of usernames' },
-                    namespace: { type: 'string', description: 'Optional namespace address' },
-                  },
-                  required: ['usernames'],
-                },
-              },
-              {
-                name: 'fetch_post_reactions',
-                description: 'Get reactions for a specific post',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    post_id: { type: 'string', description: 'ID of the post' },
-                    reaction_types: {
-                      type: 'array',
-                      items: { type: 'string' },
-                      description: 'Filter by reaction types',
-                    },
-                    pageSize: { type: 'number', description: 'Number of reactions (default: 10)' },
-                  },
-                  required: ['post_id'],
-                },
-              },
-              {
-                name: 'fetch_post_references',
-                description: 'Get comments, quotes, and other references to a post',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    post_id: { type: 'string', description: 'ID of the referenced post' },
-                    reference_types: { type: 'array', items: { type: 'string' }, description: 'Types of references' },
-                    pageSize: { type: 'number', description: 'Number of references (default: 10)' },
-                  },
-                  required: ['post_id'],
-                },
-              },
-              {
-                name: 'fetch_timeline_highlights',
-                description: "Get highlighted/popular posts from a user's network",
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    account_address: { type: 'string', description: 'Ethereum address of the account' },
-                    feed_type: { type: 'string', description: 'Feed type (global, app, custom)' },
-                    pageSize: { type: 'number', description: 'Number of highlights (default: 10)' },
-                  },
-                  required: ['account_address'],
-                },
-              },
-              {
-                name: 'search_usernames',
-                description: 'Search for usernames by partial match',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    query: { type: 'string', description: 'Search query for usernames' },
-                    namespace: { type: 'string', description: 'Optional namespace address' },
-                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
-                  },
-                  required: ['query'],
-                },
-              },
-              {
-                name: 'search_accounts',
-                description: 'Search for Lens Protocol accounts/profiles by username',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    query: { type: 'string', description: 'Search query for account usernames' },
-                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
-                  },
-                  required: ['query'],
-                },
-              },
-              {
-                name: 'search_posts',
-                description: 'Search for posts/publications by content',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    query: { type: 'string', description: 'Search query for post content' },
-                    pageSize: { type: 'number', description: 'Number of results (default: 10)' },
-                  },
-                  required: ['query'],
+                  required: ['username'],
                 },
               },
             ],
@@ -1463,47 +1280,17 @@ export class LensMCPServer {
 
         let result: any
         switch (toolName) {
-          case 'fetch_account':
-            result = await this.fetchAccount(args)
+          case 'lens_search':
+            result = await this.lensSearch(args)
             break
-          case 'fetch_posts':
-            result = await this.fetchPosts(args)
+          case 'lens_profile':
+            result = await this.lensProfile(args)
             break
-          case 'fetch_followers':
-            result = await this.fetchFollowers(args)
+          case 'lens_content':
+            result = await this.lensContent(args)
             break
-          case 'fetch_following':
-            result = await this.fetchFollowing(args)
-            break
-          case 'fetch_apps':
-            result = await this.fetchApps(args)
-            break
-          case 'fetch_groups':
-            result = await this.fetchGroups(args)
-            break
-          case 'fetch_usernames':
-            result = await this.fetchUsernames(args)
-            break
-          case 'fetch_accounts_by_usernames':
-            result = await this.fetchAccountsByUsernames(args)
-            break
-          case 'fetch_post_reactions':
-            result = await this.fetchPostReactions(args)
-            break
-          case 'fetch_post_references':
-            result = await this.fetchPostReferences(args)
-            break
-          case 'fetch_timeline_highlights':
-            result = await this.fetchTimelineHighlights(args)
-            break
-          case 'search_usernames':
-            result = await this.searchUsernames(args)
-            break
-          case 'search_accounts':
-            result = await this.searchAccounts(args)
-            break
-          case 'search_posts':
-            result = await this.searchPosts(args)
+          case 'lens_ecosystem':
+            result = await this.lensEcosystem(args)
             break
           default:
             throw new Error(`Unknown tool: ${toolName}`)
@@ -1598,7 +1385,6 @@ export class LensMCPServer {
   }
 }
 
-// Start the server
 if (import.meta.main) {
   const server = new LensMCPServer()
   server.run().catch((error) => {

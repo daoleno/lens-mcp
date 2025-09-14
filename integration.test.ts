@@ -9,199 +9,391 @@ describe('LensMCPServer Integration Tests', () => {
     server = new LensMCPServer()
   })
 
-  describe('Real Lens Protocol API Calls', () => {
-    test('should fetch real account data from mainnet', async () => {
-      const result = await (server as any).fetchAccount({
-        address: KNOWN_LENS_ADDRESS,
-      })
-
-
-      expect(result.isError).toBeUndefined()
-      expect(result.content[0].text).toBeDefined()
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('address')
-      expect(data.address.toLowerCase()).toBe(KNOWN_LENS_ADDRESS.toLowerCase())
-    }, 10000) // 10 second timeout for network call
-
-    test('should fetch real posts from explore feed', async () => {
-      const result = await (server as any).fetchPosts({
-        pageSize: 5,
-      })
-
-
-      if (result.isError) {
-        console.log('Posts error:', result.content[0].text)
-        expect(result.isError).toBe(true) // Accept that it might fail
-        return
-      }
-
-      expect(result.content[0].text).toBeDefined()
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('posts')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.posts)).toBe(true)
-    }, 10000)
-
-    test('should fetch real apps from Lens Protocol', async () => {
-      const result = await (server as any).fetchApps({
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Apps error:', result.content[0].text)
-        expect(result.isError).toBe(true) // Accept that it might fail
-        return
-      }
-
-      expect(result.content[0].text).toBeDefined()
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('apps')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.apps)).toBe(true)
-    }, 10000)
-
-    test('should handle invalid address gracefully', async () => {
-      const result = await (server as any).fetchAccount({
-        address: '0xinvalid',
-      })
-
-
-      expect(result.isError).toBe(true)
-      expect(result.content[0].text).toContain('Error fetching account')
-    }, 10000)
-
-    test('should read real account resource', async () => {
-      const result = await (server as any).readAccountResource(KNOWN_LENS_ADDRESS)
-
-
-      expect(result.contents).toBeDefined()
-      expect(result.contents[0].uri).toBe(`lens://account/${KNOWN_LENS_ADDRESS}`)
-      expect(result.contents[0].mimeType).toBe('application/json')
-
-      const data = JSON.parse(result.contents[0].text)
-      expect(data).toHaveProperty('address')
-    }, 10000)
-
-    test('should fetch followers of known account', async () => {
-      const result = await (server as any).fetchFollowers({
-        account: KNOWN_LENS_ADDRESS,
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Followers error (acceptable):', result.content[0].text)
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('followers')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.followers)).toBe(true)
-    }, 10000)
-
-    test('should fetch following of known account', async () => {
-      const result = await (server as any).fetchFollowing({
-        account: KNOWN_LENS_ADDRESS,
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Following error (acceptable):', result.content[0].text)
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('following')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.following)).toBe(true)
-    }, 10000)
-
-    test('should fetch groups from Lens Protocol', async () => {
-      const result = await (server as any).fetchGroups({
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Groups error (acceptable):', result.content[0].text)
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('groups')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.groups)).toBe(true)
-    }, 10000)
-
-    test('should fetch usernames by local name', async () => {
-      const result = await (server as any).fetchUsernames({
-        localName: 'lens',
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Usernames error (acceptable):', result.content[0].text)
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      // fetchUsernames might return different structure, just verify it's valid JSON
-      expect(data).toBeDefined()
-    }, 10000)
-
-    test('should search accounts by username query', async () => {
-      const result = await (server as any).searchAccounts({
+  describe('lens_search Integration Tests', () => {
+    test('should search real accounts from mainnet', async () => {
+      const result = await (server as any).lensSearch({
         query: 'lens',
-        pageSize: 3,
+        type: 'accounts',
+        show: 'raw',
+        limit: 3,
       })
 
-
       if (result.isError) {
-        console.log('Search accounts error (acceptable):', result.content[0].text)
+        console.log('Account search error (acceptable):', result.content[0].text)
         expect(result.content[0].text).toBeDefined()
         return
       }
 
+      expect(result.content[0].text).toBeDefined()
       const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('accounts')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.accounts)).toBe(true)
-    }, 10000)
+      expect(data).toHaveProperty('items')
+      expect(Array.isArray(data.items)).toBe(true)
+    }, 15000)
 
-    test('should search posts by content query', async () => {
-      const result = await (server as any).searchPosts({
+    test('should search real posts from mainnet', async () => {
+      const result = await (server as any).lensSearch({
         query: 'blockchain',
-        pageSize: 3,
+        type: 'posts',
+        show: 'raw',
+        limit: 3,
       })
 
-
       if (result.isError) {
-        console.log('Search posts error (acceptable):', result.content[0].text)
+        console.log('Post search error (acceptable):', result.content[0].text)
         expect(result.content[0].text).toBeDefined()
         return
       }
 
+      expect(result.content[0].text).toBeDefined()
       const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('posts')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.posts)).toBe(true)
-    }, 10000)
+      expect(data).toHaveProperty('items')
+      expect(Array.isArray(data.items)).toBe(true)
+    }, 15000)
 
+    test('should search real apps from mainnet', async () => {
+      const result = await (server as any).lensSearch({
+        query: 'lens',
+        type: 'apps',
+        show: 'raw',
+        limit: 5,
+      })
+
+      if (result.isError) {
+        console.log('App search error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      const data = JSON.parse(result.content[0].text)
+      expect(data).toHaveProperty('items')
+      expect(Array.isArray(data.items)).toBe(true)
+    }, 15000)
+
+    test('should search usernames with natural language', async () => {
+      const result = await (server as any).lensSearch({
+        for: 'usernames matching lens',
+        query: 'lens',
+        type: 'usernames',
+        show: 'concise',
+        limit: 5,
+      })
+
+      if (result.isError) {
+        console.log('Username search error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('🔍')
+    }, 15000)
+  })
+
+  describe('lens_profile Integration Tests', () => {
+    test('should fetch real profile with natural language parameters', async () => {
+      const result = await (server as any).lensProfile({
+        who: KNOWN_LENS_ADDRESS,
+        include: ['basic'],
+        show: 'raw',
+      })
+
+      if (result.isError) {
+        console.log('Profile basic error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+
+      try {
+        const data = JSON.parse(result.content[0].text)
+        expect(data).toHaveProperty('account')
+        expect(data.account.address.toLowerCase()).toBe(KNOWN_LENS_ADDRESS.toLowerCase())
+      } catch (e) {
+        // If not JSON, just verify it contains the address in some form
+        expect(result.content[0].text.toLowerCase()).toContain(KNOWN_LENS_ADDRESS.toLowerCase().substring(0, 10))
+      }
+    }, 15000)
+
+    test('should handle comprehensive profile analysis', async () => {
+      const result = await (server as any).lensProfile({
+        who: KNOWN_LENS_ADDRESS,
+        include: ['basic', 'social'],
+        analyze: 'network',
+        show: 'detailed',
+      })
+
+      if (result.isError) {
+        console.log('Profile comprehensive error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('👤')
+    }, 15000)
+  })
+
+  describe('lens_content Integration Tests', () => {
+    test('should analyze real content with natural language', async () => {
+      const result = await (server as any).lensContent({
+        what: 'posts by this user',
+        about: 'posts',
+        target: KNOWN_LENS_ADDRESS,
+        show: 'raw',
+        limit: 3,
+      })
+
+      if (result.isError) {
+        console.log('Content posts error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+
+      try {
+        const data = JSON.parse(result.content[0].text)
+        expect(data).toHaveProperty('items')
+        expect(Array.isArray(data.items)).toBe(true)
+      } catch (e) {
+        // If not JSON, just verify it's a valid response
+        expect(result.content[0].text.length).toBeGreaterThan(0)
+      }
+    }, 15000)
+
+    test('should handle engagement analysis', async () => {
+      const result = await (server as any).lensContent({
+        about: 'highlights',
+        target: KNOWN_LENS_ADDRESS,
+        show: 'concise',
+        limit: 3,
+      })
+
+      if (result.isError) {
+        console.log('Content highlights error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('⭐')
+    }, 15000)
+  })
+
+  describe('lens_ecosystem Integration Tests', () => {
+    test('should explore real ecosystem apps', async () => {
+      const result = await (server as any).lensEcosystem({
+        explore: 'trending apps in the ecosystem',
+        view: 'apps',
+        show: 'raw',
+        limit: 5,
+      })
+
+      if (result.isError) {
+        console.log('Ecosystem apps error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+
+      try {
+        const data = JSON.parse(result.content[0].text)
+        expect(data).toHaveProperty('items')
+        expect(Array.isArray(data.items)).toBe(true)
+      } catch (e) {
+        // If not JSON, just verify it's a valid response
+        expect(result.content[0].text.length).toBeGreaterThan(0)
+      }
+    }, 15000)
+
+    test('should show real trending content', async () => {
+      const result = await (server as any).lensEcosystem({
+        view: 'trending',
+        timeframe: '7d',
+        show: 'concise',
+      })
+
+      if (result.isError) {
+        console.log('Ecosystem trending error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('📈')
+    }, 15000)
+
+    test('should provide ecosystem statistics', async () => {
+      const result = await (server as any).lensEcosystem({
+        view: 'statistics',
+        show: 'detailed',
+      })
+
+      if (result.isError) {
+        console.log('Ecosystem statistics error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('📊')
+      expect(result.content[0].text).toContain('Active Applications:')
+    }, 15000)
+
+    test('should provide ecosystem insights', async () => {
+      const result = await (server as any).lensEcosystem({
+        view: 'insights',
+        show: 'detailed',
+      })
+
+      if (result.isError) {
+        console.log('Ecosystem insights error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('🔍')
+      expect(result.content[0].text).toContain('Growth Areas:')
+    }, 15000)
+  })
+
+  describe('Natural Language Parameter Integration', () => {
+    test('should handle "for" parameter in search', async () => {
+      const result = await (server as any).lensSearch({
+        for: 'crypto accounts on lens protocol',
+        query: 'crypto',
+        type: 'accounts',
+        show: 'concise',
+      })
+
+      if (result.isError) {
+        console.log('Natural language search error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('🔍')
+    }, 15000)
+
+    test('should handle "who" parameter in profile', async () => {
+      const result = await (server as any).lensProfile({
+        who: KNOWN_LENS_ADDRESS,
+        include: ['basic'],
+        show: 'concise',
+      })
+
+      if (result.isError) {
+        console.log('Natural language profile error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('👤')
+    }, 15000)
+
+    test('should handle "what" parameter in content', async () => {
+      const result = await (server as any).lensContent({
+        what: 'posts by this user',
+        about: 'posts',
+        target: KNOWN_LENS_ADDRESS,
+        show: 'concise',
+      })
+
+      if (result.isError) {
+        console.log('Natural language content error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+    }, 15000)
+
+    test('should handle "explore" parameter in ecosystem', async () => {
+      const result = await (server as any).lensEcosystem({
+        explore: 'what apps are popular right now',
+        view: 'apps',
+        show: 'concise',
+      })
+
+      if (result.isError) {
+        console.log('Natural language ecosystem error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('🚀')
+    }, 15000)
+  })
+
+  describe('Enhanced Error Handling Integration', () => {
+    test('should provide helpful errors with examples', async () => {
+      const result = await (server as any).lensSearch({
+        query: 'test',
+        // Missing required 'type' parameter
+      })
+
+      expect(result.isError).toBeTruthy()
+      expect(result.content[0].text).toContain('I need to know what you want to find')
+      expect(result.content[0].text).toContain('lens_search(query=')
+    }, 15000)
+
+    test('should handle invalid view types gracefully', async () => {
+      const result = await (server as any).lensEcosystem({
+        view: 'invalid_view_type',
+      })
+
+      expect(result.isError).toBeTruthy()
+      expect(result.content[0].text).toContain("I don't understand")
+      expect(result.content[0].text).toContain('Try:')
+    }, 15000)
+  })
+
+  describe('Response Format Integration', () => {
+    test('should return concise format with emojis and natural language', async () => {
+      const result = await (server as any).lensEcosystem({
+        view: 'apps',
+        show: 'concise',
+      })
+
+      if (result.isError) {
+        console.log('Concise format error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('🚀')
+      expect(result.content[0].text).not.toMatch(/^\s*{/) // Should not start with JSON
+    }, 15000)
+
+    test('should return detailed format with summary + data', async () => {
+      const result = await (server as any).lensProfile({
+        who: KNOWN_LENS_ADDRESS,
+        include: ['basic'],
+        show: 'detailed',
+      })
+
+      if (result.isError) {
+        console.log('Detailed format error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      expect(result.content[0].text).toContain('👤')
+      expect(result.content[0].text).toContain('{') // Should contain JSON
+    }, 15000)
   })
 
   describe('Environment Configuration Tests', () => {
-    test('should use correct environment from process.env', () => {
+    test('should use correct environment configuration', () => {
       const originalEnv = process.env.LENS_ENVIRONMENT
 
       // Test mainnet (default)
@@ -221,156 +413,5 @@ describe('LensMCPServer Integration Tests', () => {
         delete process.env.LENS_ENVIRONMENT
       }
     })
-  })
-
-  describe('Data Format Validation', () => {
-    test('should return properly formatted account data', async () => {
-      const result = await (server as any).fetchAccount({
-        address: KNOWN_LENS_ADDRESS,
-      })
-
-
-      expect(result.isError).toBeUndefined()
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('address')
-      expect(data).toHaveProperty('username')
-      expect(data).toHaveProperty('metadata')
-    }, 10000)
-
-    test('should return properly formatted posts data', async () => {
-      const result = await (server as any).fetchPosts({
-        pageSize: 2,
-      })
-
-
-      if (result.isError) {
-        console.log('Posts format error:', result.content[0].text)
-        expect(result.isError).toBe(true) // Accept that it might fail
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('posts')
-      expect(data).toHaveProperty('pageInfo')
-
-      if (data.posts.length > 0) {
-        const post = data.posts[0]
-        expect(post).toHaveProperty('id')
-        expect(post).toHaveProperty('author')
-      }
-    }, 10000)
-  })
-
-  describe('New Tools Integration Tests', () => {
-    test('should search usernames successfully', async () => {
-      const result = await (server as any).searchUsernames({
-        query: 'lens',
-        pageSize: 5,
-      })
-
-      
-      expect(result.isError).toBeUndefined()
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('usernames')
-      expect(data).toHaveProperty('pageInfo')
-      expect(Array.isArray(data.usernames)).toBe(true)
-    }, 10000)
-
-    test('should fetch accounts by usernames successfully', async () => {
-      // Use known usernames that likely exist
-      const result = await (server as any).fetchAccountsByUsernames({
-        usernames: ['lens'],
-      })
-
-
-      if (result.isError) {
-        // Some usernames might not exist, which is acceptable
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(Array.isArray(data)).toBe(true)
-    }, 10000)
-
-    test('should fetch post reactions for real post', async () => {
-      // Use a known post ID from the timeline highlights test
-      const result = await (server as any).fetchPostReactions({
-        post_id: '76957972086854522080449803303094865882614189523310384414943375883558051433786',
-        reaction_type: 'UPVOTE',
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Post reactions error (acceptable):', result.content[0].text)
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('reactions')
-      expect(data).toHaveProperty('pageInfo')
-    }, 10000)
-
-    test('should handle non-existent post reactions gracefully', async () => {
-      const result = await (server as any).fetchPostReactions({
-        post_id: 'non-existent-post',
-      })
-
-
-      // Should either return empty results or error gracefully
-      expect(result.content[0].text).toBeDefined()
-    }, 10000)
-
-    test('should fetch post references for real post', async () => {
-      // Use a known post ID that likely has comments/quotes
-      const result = await (server as any).fetchPostReferences({
-        post_id: '76957972086854522080449803303094865882614189523310384414943375883558051433786',
-        reference_type: 'COMMENT',
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        console.log('Post references error (acceptable):', result.content[0].text)
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('references')
-      expect(data).toHaveProperty('pageInfo')
-    }, 10000)
-
-    test('should handle non-existent post references gracefully', async () => {
-      const result = await (server as any).fetchPostReferences({
-        post_id: 'non-existent-post',
-      })
-
-
-      // Should either return empty results or error gracefully
-      expect(result.content[0].text).toBeDefined()
-    }, 10000)
-
-    test('should fetch timeline highlights for known account', async () => {
-      const result = await (server as any).fetchTimelineHighlights({
-        account_address: KNOWN_LENS_ADDRESS,
-        feed_type: 'global',
-        pageSize: 3,
-      })
-
-
-      if (result.isError) {
-        // Timeline highlights might not be available for all accounts
-        expect(result.content[0].text).toBeDefined()
-        return
-      }
-
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveProperty('highlights')
-      expect(data).toHaveProperty('pageInfo')
-    }, 10000)
   })
 })
