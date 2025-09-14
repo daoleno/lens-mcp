@@ -187,7 +187,7 @@ export class LensMCPServer {
                 },
                 about: {
                   type: 'string',
-                  enum: ['posts', 'reactions', 'comments', 'engagement', 'highlights'],
+                  enum: ['posts', 'reactions', 'references', 'highlights'],
                   description: 'Type of content analysis to perform',
                 },
                 target: {
@@ -391,11 +391,44 @@ export class LensMCPServer {
     return /^0x[0-9a-fA-F]{40}$/.test(address)
   }
 
-  private truncateForTokenLimit(text: string, maxTokens: number = DEFAULT_LIMITS.maxTokens): string {
-    const maxChars = maxTokens * 4
-    if (text.length <= maxChars) return text
+  private getPostType(post: any): string {
+    // Based on Lens SDK structure analysis
+    if (post.commentOn && post.commentOn.id) {
+      return 'comment'
+    }
+    if (post.quoteOf && post.quoteOf.id) {
+      return 'quote'
+    }
+    // Check if it's a mirror/repost (has root but is not the same as root)
+    if (post.root && post.root.id && post.root.id !== post.id) {
+      return 'mirror'
+    }
+    // Default to original post
+    return 'post'
+  }
 
-    return `${text.substring(0, maxChars - 100)}\\n\\n... [Response truncated to stay within token limit]`
+  private getPostTypeEmoji(postType: string): string {
+    switch (postType) {
+      case 'comment': return '💬'
+      case 'quote': return '🔄'
+      case 'mirror': return '🪞'
+      case 'post': return '📝'
+      default: return '📄'
+    }
+  }
+
+  private checkTokenLimit(text: string, maxTokens: number = DEFAULT_LIMITS.maxTokens): { isValid: boolean; tokens: number; suggestion?: string } {
+    const tokens = Math.ceil(text.length / 4)
+    
+    if (tokens <= maxTokens) {
+      return { isValid: true, tokens }
+    }
+    
+    return {
+      isValid: false,
+      tokens,
+      suggestion: `Response size (${tokens} tokens) exceeds limit (${maxTokens}). Consider using:\n• show="concise" for summary only\n• Pagination with cursor parameter\n• Narrower include parameters`
+    }
   }
 
   private formatResponse(data: any, format: ResponseFormat, summary?: string): CallToolResult {
@@ -406,7 +439,10 @@ export class LensMCPServer {
         content = summary || this.generateSummary(data)
         break
       case 'detailed': {
-        content = `${summary || this.generateSummary(data)}\\n\\n${JSON.stringify(data, null, 2)}`
+        // For detailed mode, use smarter data reduction to stay under token limit
+        const summaryText = summary || this.generateSummary(data)
+        const optimizedData = this.optimizeDataForTokens(data)
+        content = `${summaryText}\\n\\n${JSON.stringify(optimizedData, null, 2)}`
         break
       }
       case 'raw':
@@ -414,15 +450,234 @@ export class LensMCPServer {
         break
     }
 
+    // Check token limit without truncating
+    const tokenCheck = this.checkTokenLimit(content)
+    
+    if (!tokenCheck.isValid) {
+      // Return error with helpful suggestions instead of truncating
+      return this.createErrorResponse(
+        'token_limit_exceeded',
+        `Response too large (${tokenCheck.tokens} tokens)`,
+        { suggestion: tokenCheck.suggestion }
+      )
+    }
+
     return {
       content: [
         {
           type: 'text',
-          text: this.truncateForTokenLimit(content),
+          text: content, // No truncation!
         },
       ],
     }
   }
+
+  private optimizeDataForTokens(data: any, targetTokens: number = 15000): any {
+    if (!data) return data
+    
+    const currentSize = JSON.stringify(data).length
+    
+    // If already small enough, return as-is
+    if (currentSize < targetTokens * 4) {
+      return data
+    }
+    
+    // NEVER truncate arrays - instead compress data structure
+    return this.deepOptimizeStructure(data, targetTokens)
+  }
+
+  private deepOptimizeStructure(data: any, targetTokens: number): any {
+    if (!data || typeof data !== 'object') return data
+    
+    const optimized: any = Array.isArray(data) ? [] : {}
+    
+    // Dramatically expanded list of fields to remove - keep only truly essential semantic data
+    const redundantFields = new Set([
+      // All internal/system fields
+      'createdAt', 'updatedAt', '__v', '_id', 'cursor', 'id_str', 'nodeId', 'version',
+      'hash', 'blockHash', 'blockTimestamp', 'logIndex', 'removed',
+      
+      // All binary/encoded/URL data
+      'snapshotUrl', 'contentUri', 'rawUri', 'optimized', 'transformedContent', 'animatedUrl',
+      'uri', 'url', 'urls', 'link', 'links', 'href', 'src', 'thumbnail', 'preview',
+      'fullUrl', 'originalUrl', 'smallUrl', 'mediumUrl', 'largeUrl',
+      
+      // All blockchain technical fields
+      'txHash', 'blockNumber', 'logIndex', 'transactionIndex', 'chainId', 'contractAddress',
+      'gasUsed', 'gasPrice', 'effectiveGasPrice', 'cumulativeGasUsed',
+      
+      // All UI/display fields
+      'cached', 'processed', 'normalized', 'formatted', 'rendered', 'displayUrls',
+      'theme', 'style', 'css', 'class', 'className', 'color', 'background',
+      
+      // All metadata containers (keep only specific useful fields)
+      'rawMetadata', 'encryptedMetadata', 'signature', 'proof', 'nonce',
+      'collectibleMetadata', 'lensMetadata', 'internalMetadata', 'appMetadata',
+      'publicationMetadata', 'profileMetadata',
+      
+      // All technical implementation details
+      'operations', 'momoka', 'dataAvailabilityProofs', 'dataAvailability',
+      'protocol', 'version', 'implementation', 'factory', 'proxy',
+      
+      // All media/file objects
+      'media', 'attachments', 'asset', 'assets', 'cover', 'image', 'images',
+      'video', 'videos', 'audio', 'files', 'documents', 'gallery',
+      
+      // All network/infrastructure fields  
+      'gateway', 'gateways', 'ipfsHash', 'arweaveId', 'ipfs', 'arweave',
+      'node', 'nodes', 'endpoint', 'endpoints', 'rpc', 'ws',
+      
+      // All Lens-specific internal fields
+      'indexedAt', 'publishedOn', 'syncedAt', 'lastActivityAt',
+      'mirrorId', 'collectNftAddress', 'collectModule', 'referenceModule',
+      
+      // Additional large nested objects with limited value
+      'pageInfo', 'edges', 'node', 'connection', 'connectionType',
+      'permissions', 'roles', 'capabilities', 'features', 'flags',
+      
+      // Remove deeply nested pagination and cursor data
+      'hasNext', 'hasPrev', 'next', 'prev', 'first', 'last', 'count', 'total',
+      
+      // Remove technical identifiers that don't add semantic value
+      'type', 'kind', '__typename', 'entityType', 'objectType', 'dataType',
+      
+      // Remove empty or null containers
+      'null', 'undefined', 'empty', 'void',
+      
+      // Remove redundant timestamp fields (keep only one if needed)
+      'timestamp', 'createdAt', 'updatedAt', 'publishedAt', 'modifiedAt', 'editedAt',
+      
+      // Remove large stats objects (summarize instead)
+      'counters', 'metrics', 'analytics', 'tracking', 'telemetry'
+    ])
+    
+    for (const [key, value] of Object.entries(data)) {
+      // Skip redundant fields entirely
+      if (redundantFields.has(key)) {
+        continue
+      }
+      
+      // Skip null, undefined, or empty values
+      if (value === null || value === undefined || value === '') {
+        continue
+      }
+      
+      if (Array.isArray(value)) {
+        // Keep ALL array items, but optimize each item's structure aggressively
+        const optimizedArray = value.map(item => this.optimizeItemStructure(item))
+        if (optimizedArray.length > 0) {
+          optimized[key] = optimizedArray
+        }
+      } else if (value && typeof value === 'object') {
+        // Recursively optimize nested objects
+        const optimizedNested = this.deepOptimizeStructure(value, targetTokens)
+        // Only include if the optimized object has meaningful content
+        if (Object.keys(optimizedNested).length > 0) {
+          optimized[key] = optimizedNested
+        }
+      } else if (typeof value === 'string') {
+        // For strings, keep them but remove if they're just IDs or technical identifiers
+        if (!key.toLowerCase().includes('id') || key === 'id' || value.length > 10) {
+          optimized[key] = value
+        }
+      } else {
+        // Keep primitive values (numbers, booleans) as they're usually meaningful
+        optimized[key] = value
+      }
+    }
+    
+    return optimized
+  }
+
+  private optimizeItemStructure(item: any): any {
+    if (!item || typeof item !== 'object') return item
+    
+    // Optimize based on item type
+    if (item.__typename === 'Post') {
+      return this.optimizePostStructure(item)
+    } else if (item.__typename === 'Account') {
+      return this.optimizeAccountStructure(item) 
+    } else {
+      // For other types, apply general optimization
+      return this.deepOptimizeStructure(item, 0)
+    }
+  }
+
+  private optimizePostStructure(post: any): any {
+    if (!post) return post
+    
+    // Ultra-minimal post structure - only absolutely essential semantic data
+    const optimized: any = {
+      id: post.id,
+    }
+    
+    // Add author info (minimal)
+    if (post.author) {
+      optimized.author = {
+        address: post.author.address,
+        username: post.author.username?.localName,
+      }
+    }
+    
+    // Add content (the most important part)
+    if (post.metadata?.content) {
+      optimized.content = post.metadata.content
+    }
+    
+    // Add essential stats (summarized)
+    if (post.stats) {
+      optimized.stats = {
+        reactions: post.stats.reactions,
+        mirrors: post.stats.mirrors,
+        comments: post.stats.comments,
+        quotes: post.stats.quotes
+      }
+    }
+    
+    // Add post type indicators
+    if (post.commentOn?.id) optimized.commentOn = post.commentOn.id
+    if (post.quoteOf?.id) optimized.quoteOf = post.quoteOf.id
+    if (post.root?.id && post.root.id !== post.id) optimized.root = post.root.id
+    
+    // Add post type
+    optimized.type = this.getPostType(post)
+    
+    return optimized
+  }
+
+  private optimizeAccountStructure(account: any): any {
+    if (!account) return account
+    
+    // Ultra-minimal account structure - only essential identity and stats
+    const optimized: any = {
+      address: account.address,
+    }
+    
+    // Add username info
+    if (account.username) {
+      optimized.username = account.username.localName || account.username
+    }
+    
+    // Add basic metadata (just name and bio)
+    if (account.metadata) {
+      const metadata: any = {}
+      if (account.metadata.name) metadata.name = account.metadata.name
+      if (account.metadata.bio) metadata.bio = account.metadata.bio
+      if (Object.keys(metadata).length > 0) optimized.metadata = metadata
+    }
+    
+    // Add essential stats only
+    if (account.stats) {
+      optimized.stats = {
+        followers: account.stats.followers,
+        following: account.stats.following,
+        posts: account.stats.posts || account.stats.publications,
+      }
+    }
+    
+    return optimized
+  }
+
 
 
   private generateSummary(data: any): string {
@@ -451,6 +706,16 @@ export class LensMCPServer {
     if (args.about) {
       mapped.content_type = args.about
       mapped.about = args.about
+      
+      // Map invalid/deprecated types to valid ones
+      if (args.about === 'engagement') {
+        mapped.content_type = 'reactions'
+        mapped.about = 'reactions'
+      }
+      if (args.about === 'comments') {
+        mapped.content_type = 'references'
+        mapped.about = 'references'
+      }
     }
 
     // Handle what parameter (natural language descriptions)
@@ -550,13 +815,15 @@ export class LensMCPServer {
                 const content = post.metadata?.content || post.root?.metadata?.content || post.commentOn?.metadata?.content || 'No content'
                 const stats = post.stats || {}
                 const timestamp = post.timestamp ? new Date(post.timestamp).toLocaleDateString() : ''
+                const postType = this.getPostType(post)
+                const emoji = this.getPostTypeEmoji(postType)
                 const interactions = []
                 if (stats.upvotes > 0) interactions.push(`${stats.upvotes} ❤️`)
                 if (stats.comments > 0) interactions.push(`${stats.comments} 💬`)
                 if (stats.reposts > 0) interactions.push(`${stats.reposts} 🔄`)
                 const statsStr = interactions.length > 0 ? ` (${interactions.join(', ')})` : ''
                 const timeStr = timestamp ? ` - ${timestamp}` : ''
-                return `\\n• "${content.substring(0, 100)}..." by ${post.author.username?.localName || post.author.address}${statsStr}${timeStr}`
+                return `\\n• ${emoji} "${content.substring(0, 100)}..." by ${post.author.username?.localName || post.author.address}${statsStr}${timeStr}`
               })
               .join('')
           break
@@ -843,7 +1110,8 @@ export class LensMCPServer {
                   .map((post: any, i: number) => {
                     const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
                     const timestamp = post.timestamp ? ` - ${new Date(post.timestamp).toLocaleDateString()}` : ''
-                    return `  ${i + 1}. "${content.substring(0, 60)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬)${timestamp}`
+                    const emoji = this.getPostTypeEmoji(this.getPostType(post))
+                    return `  ${i + 1}. ${emoji} "${content.substring(0, 60)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬)${timestamp}`
                   })
                   .join('\n')
                 summaryParts.push(`**Top Posts**:\n${topPosts}`)
@@ -900,18 +1168,27 @@ export class LensMCPServer {
         })
       }
 
-      // Resolve username to address if needed
+      // Determine target type and resolve if needed
       let actualTarget = target
-      if (finalContentType === 'posts' && !this.isValidEvmAddress(target)) {
-        const searchResult = await fetchAccounts(this.lensClient, {
-          filter: { searchBy: { localNameQuery: target } },
-          pageSize: PageSize.Ten,
-        })
-        
-        if (searchResult.isOk() && searchResult.value.items.length > 0) {
-          actualTarget = searchResult.value.items[0].address
-        } else {
-          throw new Error(`Username "${target}" not found`)
+      let isPostTarget = false
+      
+      // Check if target looks like a post ID (typically long numeric string)
+      if (/^\d{60,}$/.test(target) || target.startsWith('post_')) {
+        isPostTarget = true
+        actualTarget = target
+      } else {
+        // For user-related queries, resolve username to address if needed
+        if (['posts', 'highlights'].includes(finalContentType) && !this.isValidEvmAddress(target)) {
+          const searchResult = await fetchAccounts(this.lensClient, {
+            filter: { searchBy: { localNameQuery: target } },
+            pageSize: PageSize.Ten,
+          })
+          
+          if (searchResult.isOk() && searchResult.value.items.length > 0) {
+            actualTarget = searchResult.value.items[0].address
+          } else {
+            throw new Error(`Username "${target}" not found`)
+          }
         }
       }
 
@@ -959,6 +1236,17 @@ export class LensMCPServer {
         }
 
         case 'reactions': {
+          // Reactions require a post ID, not a user address
+          if (!isPostTarget) {
+            return this.createErrorResponse(
+              'lens_content', 
+              'Reactions analysis requires a post ID as target', 
+              {
+                suggestion: `For reactions analysis, provide a post ID like "post_123456" or a numeric post ID.\\nFor user-related analysis, try:\\n• lens_content(about="posts", target="${target}")\\n• lens_content(about="highlights", target="${target}")`
+              }
+            )
+          }
+
           const reactionFilters: any = {}
           if (filters.reaction_types) {
             reactionFilters.anyOf = filters.reaction_types.map((type: string) => {
@@ -974,8 +1262,8 @@ export class LensMCPServer {
           }
 
           result = await fetchPostReactions(this.lensClient, {
-            post: postId(target),
-            pageSize,
+            post: postId(actualTarget),
+            ...paginationOptions,
             ...(Object.keys(reactionFilters).length > 0 && { filter: reactionFilters }),
           })
 

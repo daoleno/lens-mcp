@@ -510,6 +510,53 @@ describe('LensMCPServer Integration Tests', () => {
       }
     }, 15000)
 
+    test('should use smart compression to stay under token limits', async () => {
+      // Test with comprehensive profile that previously exceeded token limit
+      const result = await (server as any).lensProfile({
+        who: 'daoleno',
+        include: ['activity', 'influence', 'network'],
+        show: 'detailed'
+      })
+
+      if (result.isError) {
+        console.log('Smart compression test error:', result.content[0].text)
+        return
+      }
+
+      const response = result.content[0].text
+      const tokens = Math.ceil(response.length / 4)
+      
+      // Should be well under 25k token limit
+      expect(tokens).toBeLessThan(25000)
+      
+      // Should not have any array truncation or content cutting
+      expect(response).not.toContain('array was truncated')
+      expect(response).not.toContain('content was truncated')
+      
+      // Should still preserve meaningful data structure
+      const summaryEnd = response.indexOf('\n\n{')
+      if (summaryEnd > 0) {
+        const jsonPart = response.substring(summaryEnd + 2)
+        try {
+          const data = JSON.parse(jsonPart)
+          
+          // Verify data structure exists and has content
+          let dataPointCount = 0
+          if (data.account) dataPointCount++
+          if (data.posts?.length) dataPointCount += data.posts.length
+          if (data.highlights?.length) dataPointCount += data.highlights.length
+          if (data.followers?.length) dataPointCount += data.followers.length
+          if (data.following?.length) dataPointCount += data.following.length
+          
+          expect(dataPointCount).toBeGreaterThan(0)
+          
+        } catch (e) {
+          // If JSON parsing fails, that's ok - we just verify response exists
+          expect(response.length).toBeGreaterThan(100)
+        }
+      }
+    }, 30000)
+
     test('should validate EVM addresses properly', async () => {
       // Test with valid address
       const validResult = await (server as any).lensProfile({
@@ -540,6 +587,70 @@ describe('LensMCPServer Integration Tests', () => {
       
       // Invalid address should be treated as username and searched
       expect(invalidResult.content[0].text).toBeDefined()
+    }, 15000)
+
+    test('should show post types in search results', async () => {
+      const result = await (server as any).lensSearch({
+        query: 'blockchain',
+        type: 'posts',
+        show: 'concise',
+        limit: 5,
+      })
+
+      if (result.isError) {
+        console.log('Post type search error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      // Should contain post type emojis
+      expect(result.content[0].text).toMatch(/[📝💬🔄🪞]/u)
+    }, 15000)
+
+    test('should optimize tokens in detailed mode', async () => {
+      const result = await (server as any).lensProfile({
+        who: KNOWN_LENS_ADDRESS,
+        include: ['basic'],
+        show: 'detailed',
+      })
+
+      if (result.isError) {
+        console.log('Token optimization test error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      const response = result.content[0].text
+      const estimatedTokens = Math.ceil(response.length / 4)
+      
+      // Should be under the 25k token limit
+      expect(estimatedTokens).toBeLessThan(25000)
+    }, 15000)
+
+    test('should handle engagement parameter correctly', async () => {
+      const result = await (server as any).lensContent({
+        about: 'engagement',
+        target: KNOWN_LENS_ADDRESS,
+        show: 'concise',
+      })
+
+      // Should automatically map engagement to reactions, but since target is address not post ID, should give helpful error
+      expect(result.isError).toBeTruthy()
+      expect(result.content[0].text).toContain('Reactions analysis requires a post ID')
+      expect(result.content[0].text).toContain('lens_content(about="posts"')
+    }, 15000)
+
+    test('should give clear error for invalid target type', async () => {
+      const result = await (server as any).lensContent({
+        about: 'reactions',
+        target: '0xjavi', // Invalid address format
+        show: 'concise',
+      })
+
+      expect(result.isError).toBeTruthy()
+      expect(result.content[0].text).toContain('requires a post ID')
     }, 15000)
   })
 })

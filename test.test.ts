@@ -466,12 +466,29 @@ describe('LensMCPServer', () => {
 
     test('should map "who" to address parameter', async () => {
       const result = await (server as any).lensProfile({
-        who: '0x123', // Should map to address: '0x123'
+        who: '0x1234567890123456789012345678901234567890', // Valid EVM address
         include: ['basic'],
       })
 
       expect(result.isError).toBeFalsy()
       expect(mockFetchAccount).toHaveBeenCalled()
+    })
+
+    test('should treat invalid addresses as usernames', async () => {
+      const result = await (server as any).lensProfile({
+        who: '0x123', // Invalid address - too short, should be treated as username
+        include: ['basic'],
+      })
+
+      // Either should succeed (if username search works) or fail with appropriate error
+      if (result.isError) {
+        // Should be a username search error, not address validation error
+        expect(result.content[0].text).not.toContain('EvmAddress: invalid length')
+        expect(mockFetchAccounts).toHaveBeenCalled() // Should have tried username search
+      } else {
+        expect(result.isError).toBeFalsy()
+        expect(mockFetchAccounts).toHaveBeenCalled()
+      }
     })
   })
 
