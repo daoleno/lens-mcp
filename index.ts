@@ -1256,19 +1256,6 @@ export class LensMCPServer {
                 description: 'When you want to explore the broader Lens Protocol ecosystem',
                 inputSchema: { type: 'object', properties: {} },
               },
-              {
-                name: 'lens_user_posts',
-                description: 'Get a user and their recent posts in one call (Agent-optimized composite operation)',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    username: { type: 'string', description: 'Username or address to search for' },
-                    limit: { type: 'number', description: 'Number of posts to fetch', default: 10 },
-                    show: { type: 'string', enum: ['concise', 'detailed', 'raw'], default: 'concise' },
-                  },
-                  required: ['username'],
-                },
-              },
             ],
           },
         }
