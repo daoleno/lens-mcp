@@ -521,10 +521,16 @@ export class LensMCPServer {
             `📝 Found ${result.value.items.length} posts matching "${query}":` +
             result.value.items
               .slice(0, 3)
-              .map(
-                (post: any) =>
-                  `\\n• "${post.metadata?.content?.substring(0, 100) || 'No content'}..." by ${post.author.username?.localName || post.author.address}`
-              )
+              .map((post: any) => {
+                const content = post.metadata?.content || post.root?.metadata?.content || post.commentOn?.metadata?.content || 'No content'
+                const stats = post.stats || {}
+                const interactions = []
+                if (stats.upvotes > 0) interactions.push(`${stats.upvotes} ❤️`)
+                if (stats.comments > 0) interactions.push(`${stats.comments} 💬`)
+                if (stats.reposts > 0) interactions.push(`${stats.reposts} 🔄`)
+                const statsStr = interactions.length > 0 ? ` (${interactions.join(', ')})` : ''
+                return `\\n• "${content.substring(0, 100)}..." by ${post.author.username?.localName || post.author.address}${statsStr}`
+              })
               .join('')
           break
         }
@@ -627,12 +633,12 @@ export class LensMCPServer {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_profile', args)
-      const { who: address, include = ['basic'], show = 'concise', depth = 25 } = mapped
+      const { who: identifier, include = ['basic'], show = 'concise', depth = 25 } = mapped
 
-      if (!address) {
+      if (!identifier) {
         return this.createErrorResponse('lens_profile', 'I need to know which account to analyze.', {
           suggestion: `Examples:
-• Basic profile: lens_profile(who="0x1234...")
+• Basic profile: lens_profile(who="daoleno")
 • Full analysis: lens_profile(who="0x1234...", include=["basic", "social", "influence"])
 • Network analysis: lens_profile(who="0x1234...", analyze="network")`,
         })
@@ -644,33 +650,55 @@ export class LensMCPServer {
       const profileData: any = {}
       const summaryParts: string[] = []
 
-      // Always fetch basic account info first
-      const accountResult = await fetchAccount(this.lensClient, {
-        address: evmAddress(address),
-      })
+      let account: any = null
+      let actualAddress: string = identifier
 
-      if (accountResult.isErr()) {
-        throw new Error(`Failed to fetch account: ${accountResult.error.message}`)
+      // If identifier looks like a username, search for it first
+      if (!identifier.startsWith('0x')) {
+        const searchResult = await fetchAccounts(this.lensClient, {
+          filter: { searchBy: { localNameQuery: identifier } },
+          pageSize: PageSize.Ten,
+        })
+
+        if (searchResult.isErr()) {
+          throw new Error(`Failed to search for user: ${searchResult.error.message}`)
+        }
+
+        const accounts = searchResult.value.items
+        if (accounts.length === 0) {
+          throw new Error(`No user found with username "${identifier}"`)
+        }
+
+        account = accounts[0] // Take the first match
+        actualAddress = account.address
+        profileData.account = account
+      } else {
+        // It's an address, fetch directly
+        const accountResult = await fetchAccount(this.lensClient, {
+          address: evmAddress(identifier),
+        })
+
+        if (accountResult.isErr()) {
+          throw new Error(`Failed to fetch account: ${accountResult.error.message}`)
+        }
+
+        account = accountResult.value
+        if (!account) {
+          throw new Error('Account not found')
+        }
+        profileData.account = account
       }
-
-      const account = accountResult.value
-
-      if (!account) {
-        throw new Error('Account not found')
-      }
-
-      profileData.account = account
 
       // Process each include type
       for (const includeType of include) {
         switch (includeType) {
           case 'basic': {
             summaryParts.push(
-              `👤 **Profile**: ${account.username?.localName || 'No username'} (${address.substring(0, 10)}...)`
+              `👤 **Profile**: ${account.username?.localName || 'No username'} (${actualAddress.substring(0, 10)}...)`
             )
 
             // Fetch account stats separately as Account doesn't have stats property
-            const statsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(address) })
+            const statsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(actualAddress) })
             const stats = statsResult.isErr() ? null : statsResult.value
 
             summaryParts.push(
@@ -684,8 +712,8 @@ export class LensMCPServer {
 
           case 'social': {
             const [followersResult, followingResult] = await Promise.all([
-              fetchFollowers(this.lensClient, { account: evmAddress(address), pageSize: PageSize.Ten }),
-              fetchFollowing(this.lensClient, { account: evmAddress(address), pageSize: PageSize.Ten }),
+              fetchFollowers(this.lensClient, { account: evmAddress(actualAddress), pageSize: PageSize.Ten }),
+              fetchFollowing(this.lensClient, { account: evmAddress(actualAddress), pageSize: PageSize.Ten }),
             ])
 
             if (!followersResult.isErr()) {
@@ -712,7 +740,7 @@ export class LensMCPServer {
 
           case 'influence': {
             const postsResult = await fetchPosts(this.lensClient, {
-              filter: { authors: [evmAddress(address)] },
+              filter: { authors: [evmAddress(actualAddress)] },
               pageSize: PageSize.Ten,
             })
 
@@ -723,7 +751,7 @@ export class LensMCPServer {
                 Math.max(postsResult.value.items.length, 1)
 
               // Fetch stats for influence calculation
-              const influenceStatsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(address) })
+              const influenceStatsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(actualAddress) })
               const followerCount = influenceStatsResult.isErr()
                 ? 0
                 : influenceStatsResult.value?.graphFollowStats?.followers || 0
@@ -740,12 +768,12 @@ export class LensMCPServer {
             // Fetch both timeline highlights and user's recent posts
             const [timelineResult, postsResult] = await Promise.all([
               fetchTimelineHighlights(this.lensClient, {
-                account: evmAddress(address),
+                account: evmAddress(actualAddress),
                 pageSize,
                 filter: { feeds: [{ globalFeed: true }] },
               }),
               fetchPosts(this.lensClient, {
-                filter: { authors: [evmAddress(address)] },
+                filter: { authors: [evmAddress(actualAddress)] },
                 pageSize,
               }),
             ])
@@ -769,10 +797,10 @@ export class LensMCPServer {
               if (posts.length > 0) {
                 const topPosts = posts
                   .slice(0, 2)
-                  .map(
-                    (post: any, i: number) =>
-                      `  ${i + 1}. "${post.metadata?.content?.substring(0, 60) || 'No content'}..." (${post.stats?.reactions || 0} ❤️)`
-                  )
+                  .map((post: any, i: number) => {
+                    const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
+                    return `  ${i + 1}. "${content.substring(0, 60)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬)`
+                  })
                   .join('\n')
                 summaryParts.push(`**Top Posts**:\n${topPosts}`)
               }
@@ -782,8 +810,8 @@ export class LensMCPServer {
 
           case 'network': {
             const [followersResult, followingResult] = await Promise.all([
-              fetchFollowers(this.lensClient, { account: evmAddress(address), pageSize }),
-              fetchFollowing(this.lensClient, { account: evmAddress(address), pageSize }),
+              fetchFollowers(this.lensClient, { account: evmAddress(actualAddress), pageSize }),
+              fetchFollowing(this.lensClient, { account: evmAddress(actualAddress), pageSize }),
             ])
 
             if (!followersResult.isErr() && !followingResult.isErr()) {
@@ -854,10 +882,10 @@ export class LensMCPServer {
             `📝 ${result.value.items.length} posts from ${target.substring(0, 10)}...:` +
             result.value.items
               .slice(0, 5)
-              .map(
-                (post: any) =>
-                  `\\n• "${post.metadata?.content?.substring(0, 100) || 'No content'}..." (${post.stats?.reactions || 0} reactions)`
-              )
+              .map((post: any) => {
+                const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
+                return `\\n• "${content.substring(0, 100)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬, ${post.stats?.reposts || 0} 🔄)`
+              })
               .join('')
           break
         }
@@ -927,10 +955,11 @@ export class LensMCPServer {
             `💬 ${result.value.items.length} references to post ${target.substring(0, 15)}...:` +
             result.value.items
               .slice(0, 5)
-              .map(
-                (ref: any) =>
-                  `\\n• ${ref.referenceType} by ${ref.author.username?.localName || ref.author.address.substring(0, 10)}: "${ref.metadata?.content?.substring(0, 80) || 'No content'}..."`
-              )
+              .map((ref: any) => {
+                const content = ref.metadata?.content || ref.root?.metadata?.content || 'No content'
+                const refType = ref.__typename === 'Post' ? (ref.commentOn ? 'Comment' : ref.quoteOf ? 'Quote' : 'Post') : ref.referenceType
+                return `\\n• ${refType} by ${ref.author.username?.localName || ref.author.address.substring(0, 10)}: "${content.substring(0, 80)}..."`
+              })
               .join('')
           break
         }
@@ -950,10 +979,10 @@ export class LensMCPServer {
             `⭐ ${result.value.items.length} timeline highlights for ${target.substring(0, 10)}...:` +
             result.value.items
               .slice(0, 5)
-              .map(
-                (post: any) =>
-                  `\\n• "${post.metadata?.content?.substring(0, 80) || 'No content'}..." (${post.stats?.reactions || 0} reactions)`
-              )
+              .map((post: any) => {
+                const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
+                return `\\n• "${content.substring(0, 80)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬)`
+              })
               .join('')
           break
         }
@@ -1045,10 +1074,10 @@ export class LensMCPServer {
             `📈 ${result.value.items.length} trending posts on Lens Protocol:` +
             result.value.items
               .slice(0, 5)
-              .map(
-                (post: any) =>
-                  `\\n• "${post.metadata?.content?.substring(0, 80) || 'No content'}..." by ${post.author.username?.localName || post.author.address.substring(0, 8)} (${post.stats?.reactions || 0} reactions)`
-              )
+              .map((post: any) => {
+                const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
+                return `\\n• "${content.substring(0, 80)}..." by ${post.author.username?.localName || post.author.address.substring(0, 8)} (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬, ${post.stats?.reposts || 0} 🔄)`
+              })
               .join('')
           break
         }
