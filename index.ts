@@ -758,19 +758,22 @@ export class LensMCPServer {
             if (!postsResult.isErr()) {
               profileData.recentPosts = postsResult.value
               const posts = postsResult.value.items
-              const avgReactions = posts.length > 0 
-                ? posts.reduce((sum: number, p: any) => sum + (p.stats?.reactions || 0), 0) / posts.length 
-                : 0
+              const avgReactions =
+                posts.length > 0
+                  ? posts.reduce((sum: number, p: any) => sum + (p.stats?.reactions || 0), 0) / posts.length
+                  : 0
 
-              summaryParts.push(
-                `📝 **Recent Posts**: ${posts.length} posts, avg ${avgReactions.toFixed(1)} reactions`
-              )
+              summaryParts.push(`📝 **Recent Posts**: ${posts.length} posts, avg ${avgReactions.toFixed(1)} reactions`)
 
               // Add preview of top posts
               if (posts.length > 0) {
-                const topPosts = posts.slice(0, 2).map((post: any, i: number) => 
-                  `  ${i + 1}. "${post.metadata?.content?.substring(0, 60) || 'No content'}..." (${post.stats?.reactions || 0} ❤️)`
-                ).join('\n')
+                const topPosts = posts
+                  .slice(0, 2)
+                  .map(
+                    (post: any, i: number) =>
+                      `  ${i + 1}. "${post.metadata?.content?.substring(0, 60) || 'No content'}..." (${post.stats?.reactions || 0} ❤️)`
+                  )
+                  .join('\n')
                 summaryParts.push(`**Top Posts**:\n${topPosts}`)
               }
             }
@@ -1113,7 +1116,6 @@ export class LensMCPServer {
     }
   }
 
-
   private async readAccountResource(address: string) {
     try {
       const result = await fetchAccount(this.lensClient, {
@@ -1230,6 +1232,127 @@ export class LensMCPServer {
         }
       }
 
+      if (request.method === 'tools/list') {
+        return {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: {
+            tools: [
+              {
+                name: 'lens_search',
+                description:
+                  'When you need to find or discover anything on Lens Protocol - accounts, posts, usernames, apps, or groups. Perfect for exploring and discovering content based on queries, names, or topics.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'Search terms or keywords',
+                    },
+                    type: {
+                      type: 'string',
+                      enum: ['accounts', 'posts', 'usernames', 'apps', 'groups'],
+                      description: 'Type of content to search for',
+                    },
+                    show: {
+                      type: 'string',
+                      enum: ['concise', 'detailed', 'raw'],
+                      default: 'concise',
+                      description: 'How much detail to include',
+                    },
+                    limit: {
+                      type: 'number',
+                      default: 10,
+                      maximum: 50,
+                      description: 'Maximum results to return',
+                    },
+                  },
+                  required: ['query', 'type'],
+                },
+              },
+              {
+                name: 'lens_profile',
+                description:
+                  'When you want to learn everything about a Lens Protocol account - their identity, social connections, influence, and activity. Perfect for understanding who someone is, their network, and their impact on the platform.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    who: {
+                      type: 'string',
+                      description: 'Ethereum address or username of the account to analyze',
+                    },
+                    include: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                        enum: ['basic', 'social', 'influence', 'activity', 'network'],
+                      },
+                      default: ['basic'],
+                      description:
+                        'What information to include: basic info, social connections, influence metrics, recent activity, or network analysis',
+                    },
+                    show: {
+                      type: 'string',
+                      enum: ['concise', 'detailed', 'raw'],
+                      default: 'concise',
+                      description: 'Level of detail in response',
+                    },
+                  },
+                  required: ['who'],
+                },
+              },
+              {
+                name: 'lens_content',
+                description:
+                  'When you want to understand how content performs and what people think about it. Perfect for analyzing post engagement, reading reactions and comments, or measuring content success and social sentiment.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    about: {
+                      type: 'string',
+                      enum: ['posts', 'reactions', 'comments', 'engagement', 'highlights'],
+                      description: 'Type of content analysis to perform',
+                    },
+                    target: {
+                      type: 'string',
+                      description: 'Post ID or user address for analysis',
+                    },
+                    show: {
+                      type: 'string',
+                      enum: ['concise', 'detailed', 'raw'],
+                      default: 'concise',
+                      description: 'How detailed the analysis should be',
+                    },
+                  },
+                  required: ['about', 'target'],
+                },
+              },
+              {
+                name: 'lens_ecosystem',
+                description:
+                  "When you want to explore the broader Lens Protocol ecosystem - trending content, popular applications, platform statistics, and community insights. Perfect for understanding what's happening across the platform and discovering ecosystem opportunities.",
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    view: {
+                      type: 'string',
+                      enum: ['trending', 'apps', 'groups', 'statistics', 'insights'],
+                      description: 'Type of ecosystem view to show',
+                    },
+                    show: {
+                      type: 'string',
+                      enum: ['concise', 'detailed', 'raw'],
+                      default: 'concise',
+                      description: 'Level of detail to provide',
+                    },
+                  },
+                  required: ['view'],
+                },
+              },
+            ],
+          },
+        }
+      }
 
       if (request.method === 'tools/call') {
         const toolName = request.params.name
