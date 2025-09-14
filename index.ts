@@ -112,7 +112,11 @@ export class LensMCPServer {
                   type: 'number',
                   default: 10,
                   maximum: 50,
-                  description: 'Maximum results to return',
+                  description: 'Maximum results to return per page',
+                },
+                cursor: {
+                  type: 'string',
+                  description: 'Pagination cursor to fetch next page of results (returned in previous response)',
                 },
                 filters: {
                   type: 'object',
@@ -208,7 +212,11 @@ export class LensMCPServer {
                   type: 'number',
                   default: 10,
                   maximum: 50,
-                  description: 'Maximum items to analyze',
+                  description: 'Maximum items to analyze per page',
+                },
+                cursor: {
+                  type: 'string',
+                  description: 'Pagination cursor to fetch next page of results',
                 },
                 filters: {
                   type: 'object',
@@ -374,11 +382,20 @@ export class LensMCPServer {
     }
   }
 
+  private isValidEvmAddress(address: string): boolean {
+    // EVM address is 42 characters long (0x + 40 hex chars)
+    if (address.length !== 42) return false
+    // Must start with 0x
+    if (!address.startsWith('0x')) return false
+    // Must be valid hex (only 0-9, a-f, A-F after 0x)
+    return /^0x[0-9a-fA-F]{40}$/.test(address)
+  }
+
   private truncateForTokenLimit(text: string, maxTokens: number = DEFAULT_LIMITS.maxTokens): string {
     const maxChars = maxTokens * 4
     if (text.length <= maxChars) return text
 
-    return text.substring(0, maxChars - 100) + '\\n\\n... [Response truncated to stay within token limit]'
+    return `${text.substring(0, maxChars - 100)}\\n\\n... [Response truncated to stay within token limit]`
   }
 
   private formatResponse(data: any, format: ResponseFormat, summary?: string): CallToolResult {
@@ -388,9 +405,10 @@ export class LensMCPServer {
       case 'concise':
         content = summary || this.generateSummary(data)
         break
-      case 'detailed':
-        content = (summary || this.generateSummary(data)) + '\\n\\n' + JSON.stringify(data, null, 2)
+      case 'detailed': {
+        content = `${summary || this.generateSummary(data)}\\n\\n${JSON.stringify(data, null, 2)}`
         break
+      }
       case 'raw':
         content = JSON.stringify(data, null, 2)
         break
@@ -405,6 +423,7 @@ export class LensMCPServer {
       ],
     }
   }
+
 
   private generateSummary(data: any): string {
     if (data.items && Array.isArray(data.items)) {
@@ -467,7 +486,7 @@ export class LensMCPServer {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_search', args)
-      const { query, type, show = 'concise', limit = 10, filters = {} } = mapped
+      const { query, type, show = 'concise', limit = 10, cursor, filters = {} } = mapped
 
       if (!query || !type) {
         return this.createErrorResponse(
@@ -486,11 +505,17 @@ export class LensMCPServer {
       let result: any
       let summary: string
 
+      // Build pagination options
+      const paginationOptions: any = { pageSize }
+      if (cursor) {
+        paginationOptions.cursor = cursor
+      }
+
       switch (type) {
         case 'accounts': {
           result = await fetchAccounts(this.lensClient, {
             filter: { searchBy: { localNameQuery: query } },
-            pageSize,
+            ...paginationOptions,
           })
 
           if (result.isErr()) {
@@ -510,7 +535,7 @@ export class LensMCPServer {
         case 'posts': {
           result = await fetchPosts(this.lensClient, {
             filter: { searchQuery: query },
-            pageSize,
+            ...paginationOptions,
           })
 
           if (result.isErr()) {
@@ -524,19 +549,21 @@ export class LensMCPServer {
               .map((post: any) => {
                 const content = post.metadata?.content || post.root?.metadata?.content || post.commentOn?.metadata?.content || 'No content'
                 const stats = post.stats || {}
+                const timestamp = post.timestamp ? new Date(post.timestamp).toLocaleDateString() : ''
                 const interactions = []
                 if (stats.upvotes > 0) interactions.push(`${stats.upvotes} ❤️`)
                 if (stats.comments > 0) interactions.push(`${stats.comments} 💬`)
                 if (stats.reposts > 0) interactions.push(`${stats.reposts} 🔄`)
                 const statsStr = interactions.length > 0 ? ` (${interactions.join(', ')})` : ''
-                return `\\n• "${content.substring(0, 100)}..." by ${post.author.username?.localName || post.author.address}${statsStr}`
+                const timeStr = timestamp ? ` - ${timestamp}` : ''
+                return `\\n• "${content.substring(0, 100)}..." by ${post.author.username?.localName || post.author.address}${statsStr}${timeStr}`
               })
               .join('')
           break
         }
 
         case 'apps': {
-          result = await fetchApps(this.lensClient, { pageSize })
+          result = await fetchApps(this.lensClient, paginationOptions)
 
           if (result.isErr()) {
             throw new Error(`Apps search failed: ${result.error.message}`)
@@ -623,7 +650,23 @@ export class LensMCPServer {
           )
       }
 
-      return this.formatResponse(result.value, show as ResponseFormat, summary)
+      // Prepare response data with pagination info
+      const responseData = {
+        ...result.value,
+        pagination: {
+          hasNext: result.value.pageInfo?.hasNext || false,
+          nextCursor: result.value.pageInfo?.next || null,
+          currentPage: result.value.items.length,
+          totalShown: result.value.items.length,
+        }
+      }
+
+      // Add pagination info to summary if there's more data
+      if (result.value.pageInfo?.hasNext) {
+        summary += `\\n\\n🔄 **More results available** - Use cursor "${result.value.pageInfo.next}" to get next page`
+      }
+
+      return this.formatResponse(responseData, show as ResponseFormat, summary)
     } catch (error) {
       return this.createErrorResponse('lens_search', error instanceof Error ? error.message : String(error))
     }
@@ -653,8 +696,8 @@ export class LensMCPServer {
       let account: any = null
       let actualAddress: string = identifier
 
-      // If identifier looks like a username, search for it first
-      if (!identifier.startsWith('0x')) {
+      // If identifier is not a valid EVM address, search for it as username
+      if (!this.isValidEvmAddress(identifier)) {
         const searchResult = await fetchAccounts(this.lensClient, {
           filter: { searchBy: { localNameQuery: identifier } },
           pageSize: PageSize.Ten,
@@ -799,7 +842,8 @@ export class LensMCPServer {
                   .slice(0, 2)
                   .map((post: any, i: number) => {
                     const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
-                    return `  ${i + 1}. "${content.substring(0, 60)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬)`
+                    const timestamp = post.timestamp ? ` - ${new Date(post.timestamp).toLocaleDateString()}` : ''
+                    return `  ${i + 1}. "${content.substring(0, 60)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬)${timestamp}`
                   })
                   .join('\n')
                 summaryParts.push(`**Top Posts**:\n${topPosts}`)
@@ -846,31 +890,52 @@ export class LensMCPServer {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_content', args)
-      const { content_type, about, target, show = 'concise', limit = 10, filters = {} } = mapped
+      const { content_type, about, target, show = 'concise', limit = 10, cursor, filters = {} } = mapped
       const finalContentType = content_type || about
 
       if (!finalContentType || !target) {
         return this.createErrorResponse('lens_content', 'Missing required parameters: about and target', {
           suggestion:
-            'Examples:\\n• For post reactions: lens_content(about="reactions", target="post_123")\\n• For user posts: lens_content(about="posts", target="0x1234...")',
+            'Examples:\\n• For post reactions: lens_content(about="reactions", target="post_123")\\n• For user posts: lens_content(about="posts", target="0x1234...")\\n• For user posts by username: lens_content(about="posts", target="daoleno")',
         })
+      }
+
+      // Resolve username to address if needed
+      let actualTarget = target
+      if (finalContentType === 'posts' && !this.isValidEvmAddress(target)) {
+        const searchResult = await fetchAccounts(this.lensClient, {
+          filter: { searchBy: { localNameQuery: target } },
+          pageSize: PageSize.Ten,
+        })
+        
+        if (searchResult.isOk() && searchResult.value.items.length > 0) {
+          actualTarget = searchResult.value.items[0].address
+        } else {
+          throw new Error(`Username "${target}" not found`)
+        }
       }
 
       const pageSize = Math.min(limit, DEFAULT_LIMITS.maxItems) <= 10 ? PageSize.Ten : PageSize.Fifty
       let result: any
       let summary: string
 
+      // Build pagination options
+      const paginationOptions: any = { pageSize }
+      if (cursor) {
+        paginationOptions.cursor = cursor
+      }
+
       switch (finalContentType) {
         case 'posts': {
           if (filters.author) {
             result = await fetchPosts(this.lensClient, {
               filter: { authors: [evmAddress(filters.author)] },
-              pageSize,
+              ...paginationOptions,
             })
           } else {
             result = await fetchPosts(this.lensClient, {
-              filter: { authors: [evmAddress(target)] },
-              pageSize,
+              filter: { authors: [evmAddress(actualTarget)] },
+              ...paginationOptions,
             })
           }
 
@@ -878,13 +943,16 @@ export class LensMCPServer {
             throw new Error(`Failed to fetch posts: ${result.error.message}`)
           }
 
+          const displayName = this.isValidEvmAddress(target) ? `${target.substring(0, 10)}...` : target
+
           summary =
-            `📝 ${result.value.items.length} posts from ${target.substring(0, 10)}...:` +
+            `📝 ${result.value.items.length} posts from ${displayName}:` +
             result.value.items
               .slice(0, 5)
               .map((post: any) => {
                 const content = post.metadata?.content || post.root?.metadata?.content || 'No content'
-                return `\\n• "${content.substring(0, 100)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬, ${post.stats?.reposts || 0} 🔄)`
+                const timestamp = post.timestamp ? ` - ${new Date(post.timestamp).toLocaleDateString()}` : ''
+                return `\\n• "${content.substring(0, 100)}..." (${post.stats?.upvotes || 0} ❤️, ${post.stats?.comments || 0} 💬, ${post.stats?.reposts || 0} 🔄)${timestamp}`
               })
               .join('')
           break
@@ -1293,7 +1361,11 @@ export class LensMCPServer {
                       type: 'number',
                       default: 10,
                       maximum: 50,
-                      description: 'Maximum results to return',
+                      description: 'Maximum results to return per page',
+                    },
+                    cursor: {
+                      type: 'string',
+                      description: 'Pagination cursor to fetch next page of results',
                     },
                   },
                   required: ['query', 'type'],

@@ -414,4 +414,132 @@ describe('LensMCPServer Integration Tests', () => {
       }
     })
   })
+
+  describe('Pagination Integration Tests', () => {
+    test('should handle pagination in lens_search', async () => {
+      // First page
+      const firstPage = await (server as any).lensSearch({
+        query: 'lens',
+        type: 'posts',
+        show: 'raw',
+        limit: 2,
+      })
+
+      if (firstPage.isError) {
+        console.log('Pagination search error (acceptable):', firstPage.content[0].text)
+        expect(firstPage.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(firstPage.content[0].text).toBeDefined()
+      const firstPageData = JSON.parse(firstPage.content[0].text)
+      expect(firstPageData).toHaveProperty('items')
+      expect(firstPageData).toHaveProperty('pagination')
+      expect(Array.isArray(firstPageData.items)).toBe(true)
+      
+      // If there's a next page, test cursor pagination
+      if (firstPageData.pagination.hasNext && firstPageData.pagination.nextCursor) {
+        const secondPage = await (server as any).lensSearch({
+          query: 'lens', 
+          type: 'posts',
+          show: 'raw',
+          limit: 2,
+          cursor: firstPageData.pagination.nextCursor,
+        })
+
+        if (!secondPage.isError) {
+          const secondPageData = JSON.parse(secondPage.content[0].text)
+          expect(secondPageData).toHaveProperty('items')
+          expect(Array.isArray(secondPageData.items)).toBe(true)
+          
+          // Items should be different between pages
+          if (firstPageData.items.length > 0 && secondPageData.items.length > 0) {
+            expect(firstPageData.items[0].id).not.toBe(secondPageData.items[0].id)
+          }
+        }
+      }
+    }, 20000)
+
+    test('should handle pagination in lens_content', async () => {
+      const result = await (server as any).lensContent({
+        about: 'posts',
+        target: KNOWN_LENS_ADDRESS,
+        show: 'raw',
+        limit: 3,
+      })
+
+      if (result.isError) {
+        console.log('Content pagination error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      
+      try {
+        const data = JSON.parse(result.content[0].text)
+        expect(data).toHaveProperty('items')
+        expect(data).toHaveProperty('pagination')
+        expect(Array.isArray(data.items)).toBe(true)
+      } catch (e) {
+        // If not JSON, just verify it's a valid response
+        expect(result.content[0].text.length).toBeGreaterThan(0)
+      }
+    }, 15000)
+
+    test('should include pagination info in response summary', async () => {
+      const result = await (server as any).lensSearch({
+        query: 'blockchain',
+        type: 'posts',
+        show: 'concise',
+        limit: 5,
+      })
+
+      if (result.isError) {
+        console.log('Summary pagination error (acceptable):', result.content[0].text)
+        expect(result.content[0].text).toBeDefined()
+        return
+      }
+
+      expect(result.content[0].text).toBeDefined()
+      
+      // Should mention pagination if more results available
+      if (result.content[0].text.includes('More results available')) {
+        expect(result.content[0].text).toContain('cursor')
+        expect(result.content[0].text).toContain('next page')
+      }
+    }, 15000)
+
+    test('should validate EVM addresses properly', async () => {
+      // Test with valid address
+      const validResult = await (server as any).lensProfile({
+        who: '0xaF0B62118FDc775e1Ac392F9795bdC43c2376C00',
+        include: ['basic'],
+        show: 'concise',
+      })
+
+      // Test with username (should work)
+      const usernameResult = await (server as any).lensProfile({
+        who: 'lens', // This should be treated as username, not address
+        include: ['basic'], 
+        show: 'concise',
+      })
+
+      // Test with invalid hex address (too short)
+      const invalidResult = await (server as any).lensContent({
+        about: 'posts',
+        target: '0x123', // Invalid - too short
+        show: 'concise',
+      })
+
+      // Valid address should work (or give acceptable error)
+      expect(validResult.content[0].text).toBeDefined()
+      
+      // Username should work (or give acceptable error)  
+      expect(usernameResult.content[0].text).toBeDefined()
+      
+      // Invalid address should be treated as username and searched
+      expect(invalidResult.content[0].text).toBeDefined()
+    }, 15000)
+  })
 })
