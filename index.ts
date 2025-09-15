@@ -97,6 +97,7 @@ export type LensProfileInput = z.infer<typeof LensProfileSchema>
 export type LensContentInput = z.infer<typeof LensContentSchema>
 export type LensEcosystemInput = z.infer<typeof LensEcosystemSchema>
 
+
 /**
  * Lens Protocol MCP Server
  *
@@ -137,25 +138,25 @@ export class LensMCPServer {
             name: 'lens_search',
             description:
               'When you need to find or discover anything on Lens Protocol - accounts, posts, usernames, apps, or groups. Perfect for exploring and discovering content based on queries, names, or topics.',
-            inputSchema: zodToJsonSchema(LensSearchSchema, 'LensSearchSchema'),
+            inputSchema: zodToJsonSchema(LensSearchSchema),
           },
           {
             name: 'lens_profile',
             description:
               'When you want to learn everything about a Lens Protocol account - their identity, social connections, influence, and activity. Perfect for understanding who someone is, their network, and their impact on the platform.',
-            inputSchema: zodToJsonSchema(LensProfileSchema, 'LensProfileSchema'),
+            inputSchema: zodToJsonSchema(LensProfileSchema),
           },
           {
             name: 'lens_content',
             description:
               'When you want to understand how content performs and what people think about it. Perfect for analyzing post engagement, reading reactions and comments, or measuring content success and social sentiment.',
-            inputSchema: zodToJsonSchema(LensContentSchema, 'LensContentSchema'),
+            inputSchema: zodToJsonSchema(LensContentSchema),
           },
           {
             name: 'lens_ecosystem',
             description:
               "When you want to explore the broader Lens Protocol ecosystem - trending content, popular applications, platform statistics, and community insights. Perfect for understanding what's happening across the platform and discovering ecosystem opportunities.",
-            inputSchema: zodToJsonSchema(LensEcosystemSchema, 'LensEcosystemSchema'),
+            inputSchema: zodToJsonSchema(LensEcosystemSchema),
           },
         ],
       }
@@ -1660,25 +1661,25 @@ export class LensMCPServer {
                 name: 'lens_search',
                 description:
                   'When you need to find or discover anything on Lens Protocol - accounts, posts, usernames, apps, or groups. Perfect for exploring and discovering content based on queries, names, or topics.',
-                inputSchema: zodToJsonSchema(LensSearchSchema, 'LensSearchSchema'),
+                inputSchema: zodToJsonSchema(LensSearchSchema),
               },
               {
                 name: 'lens_profile',
                 description:
                   'When you want to learn everything about a Lens Protocol account - their identity, social connections, influence, and activity. Perfect for understanding who someone is, their network, and their impact on the platform.',
-                inputSchema: zodToJsonSchema(LensProfileSchema, 'LensProfileSchema'),
+                inputSchema: zodToJsonSchema(LensProfileSchema),
               },
               {
                 name: 'lens_content',
                 description:
                   'When you want to understand how content performs and what people think about it. Perfect for analyzing post engagement, reading reactions and comments, or measuring content success and social sentiment.',
-                inputSchema: zodToJsonSchema(LensContentSchema, 'LensContentSchema'),
+                inputSchema: zodToJsonSchema(LensContentSchema),
               },
               {
                 name: 'lens_ecosystem',
                 description:
                   "When you want to explore the broader Lens Protocol ecosystem - trending content, popular applications, platform statistics, and community insights. Perfect for understanding what's happening across the platform and discovering ecosystem opportunities.",
-                inputSchema: zodToJsonSchema(LensEcosystemSchema, 'LensEcosystemSchema'),
+                inputSchema: zodToJsonSchema(LensEcosystemSchema),
               },
             ],
           },

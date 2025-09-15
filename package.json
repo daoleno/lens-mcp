@@ -25,7 +25,7 @@
     "@lens-protocol/client": "^0.0.0-canary-20250820102520",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "hono": "^4.9.5",
-    "zod": "^4.1.8",
+    "zod": "3.23",
     "zod-to-json-schema": "^3.24.6"
   }
 }
