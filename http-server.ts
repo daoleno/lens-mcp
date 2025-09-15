@@ -30,7 +30,7 @@ class LensHTTPServer {
     this.app.get('/', (c) => {
       const welcomeMessage = `Lens Protocol MCP Server
 
-Connect to: https://lens-mcp.lenscan.io/mcp
+Connect to: https://lens-mcp.wooo.guru/mcp
 
 Access Lens Protocol data and functionality through the Model Context Protocol.
 Powered by Lens Protocol.
@@ -41,13 +41,13 @@ For most MCP clients:
 {
   "mcpServers": {
     "lens-protocol": {
-      "serverUrl": "https://lens-mcp.lenscan.io/mcp"
+      "serverUrl": "https://lens-mcp.wooo.guru/mcp"
     }
   }
 }
 
 For Claude Code:
-claude mcp add -s user -t http lens-protocol https://lens-mcp.lenscan.io/mcp
+claude mcp add -s user -t http lens-protocol https://lens-mcp.wooo.guru/mcp
 
 Available Tools:
 - lens_search: Find and discover anything on Lens Protocol (accounts, posts, usernames, apps, groups)
