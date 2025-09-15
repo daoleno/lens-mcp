@@ -409,25 +409,33 @@ export class LensMCPServer {
 
   private getPostTypeEmoji(postType: string): string {
     switch (postType) {
-      case 'comment': return '💬'
-      case 'quote': return '🔄'
-      case 'mirror': return '🪞'
-      case 'post': return '📝'
-      default: return '📄'
+      case 'comment':
+        return '💬'
+      case 'quote':
+        return '🔄'
+      case 'mirror':
+        return '🪞'
+      case 'post':
+        return '📝'
+      default:
+        return '📄'
     }
   }
 
-  private checkTokenLimit(text: string, maxTokens: number = DEFAULT_LIMITS.maxTokens): { isValid: boolean; tokens: number; suggestion?: string } {
+  private checkTokenLimit(
+    text: string,
+    maxTokens: number = DEFAULT_LIMITS.maxTokens
+  ): { isValid: boolean; tokens: number; suggestion?: string } {
     const tokens = Math.ceil(text.length / 4)
-    
+
     if (tokens <= maxTokens) {
       return { isValid: true, tokens }
     }
-    
+
     return {
       isValid: false,
       tokens,
-      suggestion: `Response size (${tokens} tokens) exceeds limit (${maxTokens}). Consider using:\n• show="concise" for summary only\n• Pagination with cursor parameter\n• Narrower include parameters`
+      suggestion: `Response size (${tokens} tokens) exceeds limit (${maxTokens}). Consider using:\n• show="concise" for summary only\n• Pagination with cursor parameter\n• Narrower include parameters`,
     }
   }
 
@@ -452,14 +460,12 @@ export class LensMCPServer {
 
     // Check token limit without truncating
     const tokenCheck = this.checkTokenLimit(content)
-    
+
     if (!tokenCheck.isValid) {
       // Return error with helpful suggestions instead of truncating
-      return this.createErrorResponse(
-        'token_limit_exceeded',
-        `Response too large (${tokenCheck.tokens} tokens)`,
-        { suggestion: tokenCheck.suggestion }
-      )
+      return this.createErrorResponse('token_limit_exceeded', `Response too large (${tokenCheck.tokens} tokens)`, {
+        suggestion: tokenCheck.suggestion,
+      })
     }
 
     return {
@@ -474,97 +480,218 @@ export class LensMCPServer {
 
   private optimizeDataForTokens(data: any, targetTokens: number = 15000): any {
     if (!data) return data
-    
+
     const currentSize = JSON.stringify(data).length
-    
+
     // If already small enough, return as-is
     if (currentSize < targetTokens * 4) {
       return data
     }
-    
+
     // NEVER truncate arrays - instead compress data structure
     return this.deepOptimizeStructure(data, targetTokens)
   }
 
   private deepOptimizeStructure(data: any, targetTokens: number): any {
     if (!data || typeof data !== 'object') return data
-    
+
     const optimized: any = Array.isArray(data) ? [] : {}
-    
+
     // Dramatically expanded list of fields to remove - keep only truly essential semantic data
     const redundantFields = new Set([
       // All internal/system fields
-      'createdAt', 'updatedAt', '__v', '_id', 'cursor', 'id_str', 'nodeId', 'version',
-      'hash', 'blockHash', 'blockTimestamp', 'logIndex', 'removed',
-      
+      'createdAt',
+      'updatedAt',
+      '__v',
+      '_id',
+      'cursor',
+      'id_str',
+      'nodeId',
+      'version',
+      'hash',
+      'blockHash',
+      'blockTimestamp',
+      'logIndex',
+      'removed',
+
       // All binary/encoded/URL data
-      'snapshotUrl', 'contentUri', 'rawUri', 'optimized', 'transformedContent', 'animatedUrl',
-      'uri', 'url', 'urls', 'link', 'links', 'href', 'src', 'thumbnail', 'preview',
-      'fullUrl', 'originalUrl', 'smallUrl', 'mediumUrl', 'largeUrl',
-      
+      'snapshotUrl',
+      'contentUri',
+      'rawUri',
+      'optimized',
+      'transformedContent',
+      'animatedUrl',
+      'uri',
+      'url',
+      'urls',
+      'link',
+      'links',
+      'href',
+      'src',
+      'thumbnail',
+      'preview',
+      'fullUrl',
+      'originalUrl',
+      'smallUrl',
+      'mediumUrl',
+      'largeUrl',
+
       // All blockchain technical fields
-      'txHash', 'blockNumber', 'logIndex', 'transactionIndex', 'chainId', 'contractAddress',
-      'gasUsed', 'gasPrice', 'effectiveGasPrice', 'cumulativeGasUsed',
-      
+      'txHash',
+      'blockNumber',
+      'logIndex',
+      'transactionIndex',
+      'chainId',
+      'contractAddress',
+      'gasUsed',
+      'gasPrice',
+      'effectiveGasPrice',
+      'cumulativeGasUsed',
+
       // All UI/display fields
-      'cached', 'processed', 'normalized', 'formatted', 'rendered', 'displayUrls',
-      'theme', 'style', 'css', 'class', 'className', 'color', 'background',
-      
+      'cached',
+      'processed',
+      'normalized',
+      'formatted',
+      'rendered',
+      'displayUrls',
+      'theme',
+      'style',
+      'css',
+      'class',
+      'className',
+      'color',
+      'background',
+
       // All metadata containers (keep only specific useful fields)
-      'rawMetadata', 'encryptedMetadata', 'signature', 'proof', 'nonce',
-      'collectibleMetadata', 'lensMetadata', 'internalMetadata', 'appMetadata',
-      'publicationMetadata', 'profileMetadata',
-      
+      'rawMetadata',
+      'encryptedMetadata',
+      'signature',
+      'proof',
+      'nonce',
+      'collectibleMetadata',
+      'lensMetadata',
+      'internalMetadata',
+      'appMetadata',
+      'publicationMetadata',
+      'profileMetadata',
+
       // All technical implementation details
-      'operations', 'momoka', 'dataAvailabilityProofs', 'dataAvailability',
-      'protocol', 'version', 'implementation', 'factory', 'proxy',
-      
+      'operations',
+      'momoka',
+      'dataAvailabilityProofs',
+      'dataAvailability',
+      'protocol',
+      'version',
+      'implementation',
+      'factory',
+      'proxy',
+
       // All media/file objects
-      'media', 'attachments', 'asset', 'assets', 'cover', 'image', 'images',
-      'video', 'videos', 'audio', 'files', 'documents', 'gallery',
-      
-      // All network/infrastructure fields  
-      'gateway', 'gateways', 'ipfsHash', 'arweaveId', 'ipfs', 'arweave',
-      'node', 'nodes', 'endpoint', 'endpoints', 'rpc', 'ws',
-      
+      'media',
+      'attachments',
+      'asset',
+      'assets',
+      'cover',
+      'image',
+      'images',
+      'video',
+      'videos',
+      'audio',
+      'files',
+      'documents',
+      'gallery',
+
+      // All network/infrastructure fields
+      'gateway',
+      'gateways',
+      'ipfsHash',
+      'arweaveId',
+      'ipfs',
+      'arweave',
+      'node',
+      'nodes',
+      'endpoint',
+      'endpoints',
+      'rpc',
+      'ws',
+
       // All Lens-specific internal fields
-      'indexedAt', 'publishedOn', 'syncedAt', 'lastActivityAt',
-      'mirrorId', 'collectNftAddress', 'collectModule', 'referenceModule',
-      
+      'indexedAt',
+      'publishedOn',
+      'syncedAt',
+      'lastActivityAt',
+      'mirrorId',
+      'collectNftAddress',
+      'collectModule',
+      'referenceModule',
+
       // Additional large nested objects with limited value
-      'pageInfo', 'edges', 'node', 'connection', 'connectionType',
-      'permissions', 'roles', 'capabilities', 'features', 'flags',
-      
+      'pageInfo',
+      'edges',
+      'node',
+      'connection',
+      'connectionType',
+      'permissions',
+      'roles',
+      'capabilities',
+      'features',
+      'flags',
+
       // Remove deeply nested pagination and cursor data
-      'hasNext', 'hasPrev', 'next', 'prev', 'first', 'last', 'count', 'total',
-      
+      'hasNext',
+      'hasPrev',
+      'next',
+      'prev',
+      'first',
+      'last',
+      'count',
+      'total',
+
       // Remove technical identifiers that don't add semantic value
-      'type', 'kind', '__typename', 'entityType', 'objectType', 'dataType',
-      
+      'type',
+      'kind',
+      '__typename',
+      'entityType',
+      'objectType',
+      'dataType',
+
       // Remove empty or null containers
-      'null', 'undefined', 'empty', 'void',
-      
+      'null',
+      'undefined',
+      'empty',
+      'void',
+
       // Remove redundant timestamp fields (keep only one if needed)
-      'timestamp', 'createdAt', 'updatedAt', 'publishedAt', 'modifiedAt', 'editedAt',
-      
+      'timestamp',
+      'createdAt',
+      'updatedAt',
+      'publishedAt',
+      'modifiedAt',
+      'editedAt',
+
       // Remove large stats objects (summarize instead)
-      'counters', 'metrics', 'analytics', 'tracking', 'telemetry'
+      'counters',
+      'metrics',
+      'analytics',
+      'tracking',
+      'telemetry',
     ])
-    
+
     for (const [key, value] of Object.entries(data)) {
       // Skip redundant fields entirely
       if (redundantFields.has(key)) {
         continue
       }
-      
+
       // Skip null, undefined, or empty values
       if (value === null || value === undefined || value === '') {
         continue
       }
-      
+
       if (Array.isArray(value)) {
         // Keep ALL array items, but optimize each item's structure aggressively
-        const optimizedArray = value.map(item => this.optimizeItemStructure(item))
+        const optimizedArray = value.map((item) => this.optimizeItemStructure(item))
         if (optimizedArray.length > 0) {
           optimized[key] = optimizedArray
         }
@@ -585,18 +712,18 @@ export class LensMCPServer {
         optimized[key] = value
       }
     }
-    
+
     return optimized
   }
 
   private optimizeItemStructure(item: any): any {
     if (!item || typeof item !== 'object') return item
-    
+
     // Optimize based on item type
     if (item.__typename === 'Post') {
       return this.optimizePostStructure(item)
     } else if (item.__typename === 'Account') {
-      return this.optimizeAccountStructure(item) 
+      return this.optimizeAccountStructure(item)
     } else {
       // For other types, apply general optimization
       return this.deepOptimizeStructure(item, 0)
@@ -605,12 +732,12 @@ export class LensMCPServer {
 
   private optimizePostStructure(post: any): any {
     if (!post) return post
-    
+
     // Ultra-minimal post structure - only absolutely essential semantic data
     const optimized: any = {
       id: post.id,
     }
-    
+
     // Add author info (minimal)
     if (post.author) {
       optimized.author = {
@@ -618,46 +745,46 @@ export class LensMCPServer {
         username: post.author.username?.localName,
       }
     }
-    
+
     // Add content (the most important part)
     if (post.metadata?.content) {
       optimized.content = post.metadata.content
     }
-    
+
     // Add essential stats (summarized)
     if (post.stats) {
       optimized.stats = {
         reactions: post.stats.reactions,
         mirrors: post.stats.mirrors,
         comments: post.stats.comments,
-        quotes: post.stats.quotes
+        quotes: post.stats.quotes,
       }
     }
-    
+
     // Add post type indicators
     if (post.commentOn?.id) optimized.commentOn = post.commentOn.id
     if (post.quoteOf?.id) optimized.quoteOf = post.quoteOf.id
     if (post.root?.id && post.root.id !== post.id) optimized.root = post.root.id
-    
+
     // Add post type
     optimized.type = this.getPostType(post)
-    
+
     return optimized
   }
 
   private optimizeAccountStructure(account: any): any {
     if (!account) return account
-    
+
     // Ultra-minimal account structure - only essential identity and stats
     const optimized: any = {
       address: account.address,
     }
-    
+
     // Add username info
     if (account.username) {
       optimized.username = account.username.localName || account.username
     }
-    
+
     // Add basic metadata (just name and bio)
     if (account.metadata) {
       const metadata: any = {}
@@ -665,7 +792,7 @@ export class LensMCPServer {
       if (account.metadata.bio) metadata.bio = account.metadata.bio
       if (Object.keys(metadata).length > 0) optimized.metadata = metadata
     }
-    
+
     // Add essential stats only
     if (account.stats) {
       optimized.stats = {
@@ -674,11 +801,9 @@ export class LensMCPServer {
         posts: account.stats.posts || account.stats.publications,
       }
     }
-    
+
     return optimized
   }
-
-
 
   private generateSummary(data: any): string {
     if (data.items && Array.isArray(data.items)) {
@@ -706,7 +831,7 @@ export class LensMCPServer {
     if (args.about) {
       mapped.content_type = args.about
       mapped.about = args.about
-      
+
       // Map invalid/deprecated types to valid ones
       if (args.about === 'engagement') {
         mapped.content_type = 'reactions'
@@ -812,7 +937,11 @@ export class LensMCPServer {
             result.value.items
               .slice(0, 3)
               .map((post: any) => {
-                const content = post.metadata?.content || post.root?.metadata?.content || post.commentOn?.metadata?.content || 'No content'
+                const content =
+                  post.metadata?.content ||
+                  post.root?.metadata?.content ||
+                  post.commentOn?.metadata?.content ||
+                  'No content'
                 const stats = post.stats || {}
                 const timestamp = post.timestamp ? new Date(post.timestamp).toLocaleDateString() : ''
                 const postType = this.getPostType(post)
@@ -925,7 +1054,7 @@ export class LensMCPServer {
           nextCursor: result.value.pageInfo?.next || null,
           currentPage: result.value.items.length,
           totalShown: result.value.items.length,
-        }
+        },
       }
 
       // Add pagination info to summary if there's more data
@@ -1061,7 +1190,9 @@ export class LensMCPServer {
                 Math.max(postsResult.value.items.length, 1)
 
               // Fetch stats for influence calculation
-              const influenceStatsResult = await fetchAccountStats(this.lensClient, { account: evmAddress(actualAddress) })
+              const influenceStatsResult = await fetchAccountStats(this.lensClient, {
+                account: evmAddress(actualAddress),
+              })
               const followerCount = influenceStatsResult.isErr()
                 ? 0
                 : influenceStatsResult.value?.graphFollowStats?.followers || 0
@@ -1171,7 +1302,7 @@ export class LensMCPServer {
       // Determine target type and resolve if needed
       let actualTarget = target
       let isPostTarget = false
-      
+
       // Check if target looks like a post ID (typically long numeric string)
       if (/^\d{60,}$/.test(target) || target.startsWith('post_')) {
         isPostTarget = true
@@ -1183,7 +1314,7 @@ export class LensMCPServer {
             filter: { searchBy: { localNameQuery: target } },
             pageSize: PageSize.Ten,
           })
-          
+
           if (searchResult.isOk() && searchResult.value.items.length > 0) {
             actualTarget = searchResult.value.items[0].address
           } else {
@@ -1238,13 +1369,9 @@ export class LensMCPServer {
         case 'reactions': {
           // Reactions require a post ID, not a user address
           if (!isPostTarget) {
-            return this.createErrorResponse(
-              'lens_content', 
-              'Reactions analysis requires a post ID as target', 
-              {
-                suggestion: `For reactions analysis, provide a post ID like "post_123456" or a numeric post ID.\\nFor user-related analysis, try:\\n• lens_content(about="posts", target="${target}")\\n• lens_content(about="highlights", target="${target}")`
-              }
-            )
+            return this.createErrorResponse('lens_content', 'Reactions analysis requires a post ID as target', {
+              suggestion: `For reactions analysis, provide a post ID like "post_123456" or a numeric post ID.\\nFor user-related analysis, try:\\n• lens_content(about="posts", target="${target}")\\n• lens_content(about="highlights", target="${target}")`,
+            })
           }
 
           const reactionFilters: any = {}
@@ -1313,7 +1440,14 @@ export class LensMCPServer {
               .slice(0, 5)
               .map((ref: any) => {
                 const content = ref.metadata?.content || ref.root?.metadata?.content || 'No content'
-                const refType = ref.__typename === 'Post' ? (ref.commentOn ? 'Comment' : ref.quoteOf ? 'Quote' : 'Post') : ref.referenceType
+                const refType =
+                  ref.__typename === 'Post'
+                    ? ref.commentOn
+                      ? 'Comment'
+                      : ref.quoteOf
+                        ? 'Quote'
+                        : 'Post'
+                    : ref.referenceType
                 return `\\n• ${refType} by ${ref.author.username?.localName || ref.author.address.substring(0, 10)}: "${content.substring(0, 80)}..."`
               })
               .join('')
