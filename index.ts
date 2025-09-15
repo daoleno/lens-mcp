@@ -37,6 +37,8 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
+import { z } from 'zod'
+import { zodToJsonSchema } from 'zod-to-json-schema'
 
 type ResponseFormat = 'concise' | 'detailed' | 'raw'
 
@@ -44,6 +46,56 @@ const DEFAULT_LIMITS = {
   maxTokens: 25000,
   maxItems: 50,
 }
+
+// Zod schemas for tool inputs
+const LensSearchSchema = z.object({
+  for: z.string().optional().describe('What you want to find (natural language): "crypto accounts", "DeFi posts", "lens usernames", "popular apps"'),
+  query: z.string().describe('Search terms or keywords'),
+  type: z.enum(['accounts', 'posts', 'usernames', 'apps', 'groups']).describe('Type of content to search for'),
+  show: z.enum(['concise', 'detailed', 'raw']).default('concise').describe('How much detail to include'),
+  limit: z.number().max(50).default(10).describe('Maximum results to return per page'),
+  cursor: z.string().optional().describe('Pagination cursor to fetch next page of results (returned in previous response)'),
+  filters: z.object({
+    namespace: z.string().optional().describe('Username namespace to filter by'),
+  }).optional(),
+})
+
+const LensProfileSchema = z.object({
+  who: z.string().describe('Ethereum address or username of the account to analyze'),
+  include: z.array(z.enum(['basic', 'social', 'influence', 'activity', 'network'])).default(['basic']).describe('What information to include: basic info, social connections, influence metrics, recent activity, or network analysis'),
+  analyze: z.enum(['overview', 'influence', 'engagement', 'network']).optional().describe('Type of analysis to perform on the profile'),
+  show: z.enum(['concise', 'detailed', 'raw']).default('concise').describe('Level of detail in response'),
+  depth: z.number().max(100).default(25).describe('How many social connections or posts to analyze'),
+})
+
+const LensContentSchema = z.object({
+  what: z.string().optional().describe('What you want to analyze (natural language): "reactions to this post", "comments on post", "popular posts by user", "trending content"'),
+  about: z.enum(['posts', 'reactions', 'references', 'highlights']).describe('Type of content analysis to perform'),
+  target: z.string().describe('Post ID (like "post_123") for post analysis, or user address for user content'),
+  show: z.enum(['concise', 'detailed', 'raw']).default('concise').describe('How detailed the analysis should be'),
+  include: z.array(z.enum(['likes', 'dislikes', 'comments', 'quotes', 'reposts', 'metrics'])).optional().describe('What types of engagement to include'),
+  limit: z.number().max(50).default(10).describe('Maximum items to analyze per page'),
+  cursor: z.string().optional().describe('Pagination cursor to fetch next page of results'),
+  filters: z.object({
+    author: z.string().optional().describe('Filter content by specific author'),
+    timeframe: z.enum(['1d', '7d', '30d', 'all']).optional().describe('Time period for analysis'),
+  }).optional(),
+})
+
+const LensEcosystemSchema = z.object({
+  explore: z.string().optional().describe('What aspect of the ecosystem to explore (natural language): "trending apps", "platform statistics", "popular groups", "ecosystem health"'),
+  view: z.enum(['trending', 'apps', 'groups', 'statistics', 'insights']).describe('Type of ecosystem view to show'),
+  focus: z.string().optional().describe('Specific app, group, or area to focus on (address or name)'),
+  show: z.enum(['concise', 'detailed', 'raw']).default('concise').describe('Level of detail to provide'),
+  timeframe: z.enum(['1d', '7d', '30d', 'all']).default('7d').describe('Time period for trending analysis'),
+  limit: z.number().max(50).default(20).describe('Maximum items to return'),
+})
+
+// Export types for TypeScript
+export type LensSearchInput = z.infer<typeof LensSearchSchema>
+export type LensProfileInput = z.infer<typeof LensProfileSchema>
+export type LensContentInput = z.infer<typeof LensContentSchema>
+export type LensEcosystemInput = z.infer<typeof LensEcosystemSchema>
 
 /**
  * Lens Protocol MCP Server
@@ -85,199 +137,25 @@ export class LensMCPServer {
             name: 'lens_search',
             description:
               'When you need to find or discover anything on Lens Protocol - accounts, posts, usernames, apps, or groups. Perfect for exploring and discovering content based on queries, names, or topics.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                for: {
-                  type: 'string',
-                  description:
-                    'What you want to find (natural language): "crypto accounts", "DeFi posts", "lens usernames", "popular apps"',
-                },
-                query: {
-                  type: 'string',
-                  description: 'Search terms or keywords',
-                },
-                type: {
-                  type: 'string',
-                  enum: ['accounts', 'posts', 'usernames', 'apps', 'groups'],
-                  description: 'Type of content to search for',
-                },
-                show: {
-                  type: 'string',
-                  enum: ['concise', 'detailed', 'raw'],
-                  default: 'concise',
-                  description: 'How much detail to include',
-                },
-                limit: {
-                  type: 'number',
-                  default: 10,
-                  maximum: 50,
-                  description: 'Maximum results to return per page',
-                },
-                cursor: {
-                  type: 'string',
-                  description: 'Pagination cursor to fetch next page of results (returned in previous response)',
-                },
-                filters: {
-                  type: 'object',
-                  properties: {
-                    namespace: {
-                      type: 'string',
-                      description: 'Username namespace to filter by',
-                    },
-                  },
-                },
-              },
-              required: ['query', 'type'],
-            },
+            inputSchema: zodToJsonSchema(LensSearchSchema, 'LensSearchSchema'),
           },
           {
             name: 'lens_profile',
             description:
               'When you want to learn everything about a Lens Protocol account - their identity, social connections, influence, and activity. Perfect for understanding who someone is, their network, and their impact on the platform.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                who: {
-                  type: 'string',
-                  description: 'Ethereum address or username of the account to analyze',
-                },
-                include: {
-                  type: 'array',
-                  items: {
-                    type: 'string',
-                    enum: ['basic', 'social', 'influence', 'activity', 'network'],
-                  },
-                  default: ['basic'],
-                  description:
-                    'What information to include: basic info, social connections, influence metrics, recent activity, or network analysis',
-                },
-                analyze: {
-                  type: 'string',
-                  enum: ['overview', 'influence', 'engagement', 'network'],
-                  description: 'Type of analysis to perform on the profile',
-                },
-                show: {
-                  type: 'string',
-                  enum: ['concise', 'detailed', 'raw'],
-                  default: 'concise',
-                  description: 'Level of detail in response',
-                },
-                depth: {
-                  type: 'number',
-                  default: 25,
-                  maximum: 100,
-                  description: 'How many social connections or posts to analyze',
-                },
-              },
-              required: ['who'],
-            },
+            inputSchema: zodToJsonSchema(LensProfileSchema, 'LensProfileSchema'),
           },
           {
             name: 'lens_content',
             description:
               'When you want to understand how content performs and what people think about it. Perfect for analyzing post engagement, reading reactions and comments, or measuring content success and social sentiment.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                what: {
-                  type: 'string',
-                  description:
-                    'What you want to analyze (natural language): "reactions to this post", "comments on post", "popular posts by user", "trending content"',
-                },
-                about: {
-                  type: 'string',
-                  enum: ['posts', 'reactions', 'references', 'highlights'],
-                  description: 'Type of content analysis to perform',
-                },
-                target: {
-                  type: 'string',
-                  description: 'Post ID (like "post_123") for post analysis, or user address for user content',
-                },
-                show: {
-                  type: 'string',
-                  enum: ['concise', 'detailed', 'raw'],
-                  default: 'concise',
-                  description: 'How detailed the analysis should be',
-                },
-                include: {
-                  type: 'array',
-                  items: {
-                    type: 'string',
-                    enum: ['likes', 'dislikes', 'comments', 'quotes', 'reposts', 'metrics'],
-                  },
-                  description: 'What types of engagement to include',
-                },
-                limit: {
-                  type: 'number',
-                  default: 10,
-                  maximum: 50,
-                  description: 'Maximum items to analyze per page',
-                },
-                cursor: {
-                  type: 'string',
-                  description: 'Pagination cursor to fetch next page of results',
-                },
-                filters: {
-                  type: 'object',
-                  properties: {
-                    author: {
-                      type: 'string',
-                      description: 'Filter content by specific author',
-                    },
-                    timeframe: {
-                      type: 'string',
-                      enum: ['1d', '7d', '30d', 'all'],
-                      description: 'Time period for analysis',
-                    },
-                  },
-                },
-              },
-              required: ['about', 'target'],
-            },
+            inputSchema: zodToJsonSchema(LensContentSchema, 'LensContentSchema'),
           },
           {
             name: 'lens_ecosystem',
             description:
               "When you want to explore the broader Lens Protocol ecosystem - trending content, popular applications, platform statistics, and community insights. Perfect for understanding what's happening across the platform and discovering ecosystem opportunities.",
-            inputSchema: {
-              type: 'object',
-              properties: {
-                explore: {
-                  type: 'string',
-                  description:
-                    'What aspect of the ecosystem to explore (natural language): "trending apps", "platform statistics", "popular groups", "ecosystem health"',
-                },
-                view: {
-                  type: 'string',
-                  enum: ['trending', 'apps', 'groups', 'statistics', 'insights'],
-                  description: 'Type of ecosystem view to show',
-                },
-                focus: {
-                  type: 'string',
-                  description: 'Specific app, group, or area to focus on (address or name)',
-                },
-                show: {
-                  type: 'string',
-                  enum: ['concise', 'detailed', 'raw'],
-                  default: 'concise',
-                  description: 'Level of detail to provide',
-                },
-                timeframe: {
-                  type: 'string',
-                  enum: ['1d', '7d', '30d', 'all'],
-                  default: '7d',
-                  description: 'Time period for trending analysis',
-                },
-                limit: {
-                  type: 'number',
-                  default: 20,
-                  maximum: 50,
-                  description: 'Maximum items to return',
-                },
-              },
-              required: ['view'],
-            },
+            inputSchema: zodToJsonSchema(LensEcosystemSchema, 'LensEcosystemSchema'),
           },
         ],
       }
@@ -287,21 +165,33 @@ export class LensMCPServer {
       const { name, arguments: args } = request.params
 
       try {
+        // Validate input using Zod schemas
+        let validatedArgs: any
         switch (name) {
           case 'lens_search':
-            return await this.lensSearch(args)
+            validatedArgs = LensSearchSchema.parse(args)
+            return await this.lensSearch(validatedArgs)
           case 'lens_profile':
-            return await this.lensProfile(args)
+            validatedArgs = LensProfileSchema.parse(args)
+            return await this.lensProfile(validatedArgs)
           case 'lens_content':
-            return await this.lensContent(args)
+            validatedArgs = LensContentSchema.parse(args)
+            return await this.lensContent(validatedArgs)
           case 'lens_ecosystem':
-            return await this.lensEcosystem(args)
+            validatedArgs = LensEcosystemSchema.parse(args)
+            return await this.lensEcosystem(validatedArgs)
           default:
             return this.createErrorResponse(name, `Unknown tool: ${name}`, {
               suggestion: 'Available tools: lens_search, lens_profile, lens_content, lens_ecosystem',
             })
         }
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          const errorMessages = error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+          return this.createErrorResponse(name, `Invalid input: ${errorMessages}`, {
+            suggestion: 'Check the tool parameters and ensure all required fields are provided with correct types.',
+          })
+        }
         return this.createErrorResponse(name, error instanceof Error ? error.message : String(error))
       }
     })
@@ -365,7 +255,10 @@ export class LensMCPServer {
   }
 
   private createErrorResponse(toolName: string, message: string, context?: { suggestion?: string }): CallToolResult {
-    let errorText = `❌ Error in ${toolName}: ${message}`
+    // Sanitize error message to avoid exposing sensitive information
+    const sanitizedMessage = message.includes('ENOTFOUND') ? 'Network connection failed' : message
+    
+    let errorText = `❌ Error in ${toolName}: ${sanitizedMessage}`
 
     if (context?.suggestion) {
       errorText += `\\n\\n💡 Suggestion: ${context.suggestion}`
@@ -383,6 +276,7 @@ export class LensMCPServer {
   }
 
   private isValidEvmAddress(address: string): boolean {
+    if (!address || typeof address !== 'string') return false
     // EVM address is 42 characters long (0x + 40 hex chars)
     if (address.length !== 42) return false
     // Must start with 0x
@@ -426,6 +320,10 @@ export class LensMCPServer {
     text: string,
     maxTokens: number = DEFAULT_LIMITS.maxTokens
   ): { isValid: boolean; tokens: number; suggestion?: string } {
+    if (!text || typeof text !== 'string') {
+      return { isValid: true, tokens: 0 }
+    }
+    
     const tokens = Math.ceil(text.length / 4)
 
     if (tokens <= maxTokens) {
@@ -481,10 +379,11 @@ export class LensMCPServer {
   private optimizeDataForTokens(data: any, targetTokens: number = 15000): any {
     if (!data) return data
 
-    const currentSize = JSON.stringify(data).length
+    // Quick size check without full JSON.stringify for better performance
+    const roughSize = typeof data === 'string' ? data.length : JSON.stringify(data).length
 
     // If already small enough, return as-is
-    if (currentSize < targetTokens * 4) {
+    if (roughSize < targetTokens * 4) {
       return data
     }
 
@@ -872,7 +771,7 @@ export class LensMCPServer {
     return mapped
   }
 
-  private async lensSearch(args: any): Promise<CallToolResult> {
+  private async lensSearch(args: LensSearchInput): Promise<CallToolResult> {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_search', args)
@@ -1068,7 +967,7 @@ export class LensMCPServer {
     }
   }
 
-  private async lensProfile(args: any): Promise<CallToolResult> {
+  private async lensProfile(args: LensProfileInput): Promise<CallToolResult> {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_profile', args)
@@ -1285,7 +1184,7 @@ export class LensMCPServer {
     }
   }
 
-  private async lensContent(args: any): Promise<CallToolResult> {
+  private async lensContent(args: LensContentInput): Promise<CallToolResult> {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_content', args)
@@ -1489,7 +1388,7 @@ export class LensMCPServer {
     }
   }
 
-  private async lensEcosystem(args: any): Promise<CallToolResult> {
+  private async lensEcosystem(args: LensEcosystemInput): Promise<CallToolResult> {
     try {
       // Apply parameter mapping
       const mapped = this.mapParameters('lens_ecosystem', args)
@@ -1761,116 +1660,25 @@ export class LensMCPServer {
                 name: 'lens_search',
                 description:
                   'When you need to find or discover anything on Lens Protocol - accounts, posts, usernames, apps, or groups. Perfect for exploring and discovering content based on queries, names, or topics.',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    query: {
-                      type: 'string',
-                      description: 'Search terms or keywords',
-                    },
-                    type: {
-                      type: 'string',
-                      enum: ['accounts', 'posts', 'usernames', 'apps', 'groups'],
-                      description: 'Type of content to search for',
-                    },
-                    show: {
-                      type: 'string',
-                      enum: ['concise', 'detailed', 'raw'],
-                      default: 'concise',
-                      description: 'How much detail to include',
-                    },
-                    limit: {
-                      type: 'number',
-                      default: 10,
-                      maximum: 50,
-                      description: 'Maximum results to return per page',
-                    },
-                    cursor: {
-                      type: 'string',
-                      description: 'Pagination cursor to fetch next page of results',
-                    },
-                  },
-                  required: ['query', 'type'],
-                },
+                inputSchema: zodToJsonSchema(LensSearchSchema, 'LensSearchSchema'),
               },
               {
                 name: 'lens_profile',
                 description:
                   'When you want to learn everything about a Lens Protocol account - their identity, social connections, influence, and activity. Perfect for understanding who someone is, their network, and their impact on the platform.',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    who: {
-                      type: 'string',
-                      description: 'Ethereum address or username of the account to analyze',
-                    },
-                    include: {
-                      type: 'array',
-                      items: {
-                        type: 'string',
-                        enum: ['basic', 'social', 'influence', 'activity', 'network'],
-                      },
-                      default: ['basic'],
-                      description:
-                        'What information to include: basic info, social connections, influence metrics, recent activity, or network analysis',
-                    },
-                    show: {
-                      type: 'string',
-                      enum: ['concise', 'detailed', 'raw'],
-                      default: 'concise',
-                      description: 'Level of detail in response',
-                    },
-                  },
-                  required: ['who'],
-                },
+                inputSchema: zodToJsonSchema(LensProfileSchema, 'LensProfileSchema'),
               },
               {
                 name: 'lens_content',
                 description:
                   'When you want to understand how content performs and what people think about it. Perfect for analyzing post engagement, reading reactions and comments, or measuring content success and social sentiment.',
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    about: {
-                      type: 'string',
-                      enum: ['posts', 'reactions', 'comments', 'engagement', 'highlights'],
-                      description: 'Type of content analysis to perform',
-                    },
-                    target: {
-                      type: 'string',
-                      description: 'Post ID or user address for analysis',
-                    },
-                    show: {
-                      type: 'string',
-                      enum: ['concise', 'detailed', 'raw'],
-                      default: 'concise',
-                      description: 'How detailed the analysis should be',
-                    },
-                  },
-                  required: ['about', 'target'],
-                },
+                inputSchema: zodToJsonSchema(LensContentSchema, 'LensContentSchema'),
               },
               {
                 name: 'lens_ecosystem',
                 description:
                   "When you want to explore the broader Lens Protocol ecosystem - trending content, popular applications, platform statistics, and community insights. Perfect for understanding what's happening across the platform and discovering ecosystem opportunities.",
-                inputSchema: {
-                  type: 'object',
-                  properties: {
-                    view: {
-                      type: 'string',
-                      enum: ['trending', 'apps', 'groups', 'statistics', 'insights'],
-                      description: 'Type of ecosystem view to show',
-                    },
-                    show: {
-                      type: 'string',
-                      enum: ['concise', 'detailed', 'raw'],
-                      default: 'concise',
-                      description: 'Level of detail to provide',
-                    },
-                  },
-                  required: ['view'],
-                },
+                inputSchema: zodToJsonSchema(LensEcosystemSchema, 'LensEcosystemSchema'),
               },
             ],
           },
@@ -1881,28 +1689,49 @@ export class LensMCPServer {
         const toolName = request.params.name
         const args = request.params.arguments || {}
 
-        let result: any
-        switch (toolName) {
-          case 'lens_search':
-            result = await this.lensSearch(args)
-            break
-          case 'lens_profile':
-            result = await this.lensProfile(args)
-            break
-          case 'lens_content':
-            result = await this.lensContent(args)
-            break
-          case 'lens_ecosystem':
-            result = await this.lensEcosystem(args)
-            break
-          default:
-            throw new Error(`Unknown tool: ${toolName}`)
-        }
+        try {
+          // Validate input using Zod schemas
+          let validatedArgs: any
+          let result: any
+          switch (toolName) {
+            case 'lens_search':
+              validatedArgs = LensSearchSchema.parse(args)
+              result = await this.lensSearch(validatedArgs)
+              break
+            case 'lens_profile':
+              validatedArgs = LensProfileSchema.parse(args)
+              result = await this.lensProfile(validatedArgs)
+              break
+            case 'lens_content':
+              validatedArgs = LensContentSchema.parse(args)
+              result = await this.lensContent(validatedArgs)
+              break
+            case 'lens_ecosystem':
+              validatedArgs = LensEcosystemSchema.parse(args)
+              result = await this.lensEcosystem(validatedArgs)
+              break
+            default:
+              throw new Error(`Unknown tool: ${toolName}`)
+          }
 
-        return {
-          jsonrpc: '2.0',
-          id: request.id,
-          result,
+          return {
+            jsonrpc: '2.0',
+            id: request.id,
+            result,
+          }
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            const errorMessages = error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+            const errorResult = this.createErrorResponse(toolName, `Invalid input: ${errorMessages}`, {
+              suggestion: 'Check the tool parameters and ensure all required fields are provided with correct types.',
+            })
+            return {
+              jsonrpc: '2.0',
+              id: request.id,
+              result: errorResult,
+            }
+          }
+          throw error
         }
       }
 
